@@ -2773,6 +2773,38 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
+name = "nexport"
+version = "0.1.0-alpha"
+dependencies = [
+ "aes-gcm",
+ "argon2",
+ "base64 0.22.1",
+ "dashmap",
+ "dirs",
+ "ed25519-dalek",
+ "hostname",
+ "log",
+ "rand 0.8.5",
+ "redb",
+ "russh",
+ "russh-keys",
+ "russh-sftp",
+ "serde",
+ "serde_json",
+ "ssh-key",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+ "tauri-plugin-log",
+ "tauri-plugin-shell",
+ "thiserror 2.0.18",
+ "tokio",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
 name = "nix"
 version = "0.31.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4875,38 +4907,6 @@ dependencies = [
  "poly1305",
  "ssh-encoding",
  "subtle",
-]
-
-[[package]]
-name = "ssh-connect"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "argon2",
- "base64 0.22.1",
- "dashmap",
- "dirs",
- "ed25519-dalek",
- "hostname",
- "log",
- "rand 0.8.5",
- "redb",
- "russh",
- "russh-keys",
- "russh-sftp",
- "serde",
- "serde_json",
- "ssh-key",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tauri-plugin-log",
- "tauri-plugin-shell",
- "thiserror 2.0.18",
- "tokio",
- "uuid",
- "zeroize",
 ]
 
 [[package]]

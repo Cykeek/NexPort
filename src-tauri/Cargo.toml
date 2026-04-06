@@ -1,6 +1,6 @@
 [package]
-name = "ssh-connect"
-version = "0.1.0"
+name = "nexport"
+version = "0.1.0-alpha"
 description = "A Tauri SSH Client"
 authors = ["you"]
 license = "MIT"

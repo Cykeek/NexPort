@@ -92,7 +92,7 @@ export function KeyActionDialog({ open, onOpenChange, editKey }: KeyActionDialog
                   className="form-input form-textarea"
                   value={form.privateKey}
                   onChange={(e) => setForm((p) => ({ ...p, privateKey: e.target.value }))}
-                  placeholder={editKey ? "Leave empty to keep existing key" : "-----BEGIN OPENSSH PRIVATE KEY-----"}
+                  placeholder={editKey ? "Leave empty to keep existing key" : "Paste your private key here (OpenSSH format)"}
                   rows={8}
                 />
               </div>
