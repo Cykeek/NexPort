@@ -1,14 +1,92 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Key, Trash2, Copy, Upload, Pencil } from "lucide-react";
+import { Key, Trash2, Copy, Upload, Pencil, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { KeyActionDialog } from "./key-action-dialog";
 import { useKeyStore, KeyInfo } from "@/stores/key-store";
 
+interface GenerateKeyDialogProps {
+  onClose: () => void;
+  onGenerate: (name: string, keyType: string) => Promise<void>;
+}
+
+function GenerateKeyDialog({ onClose, onGenerate }: GenerateKeyDialogProps) {
+  const [name, setName] = useState("");
+  const [keyType, setKeyType] = useState("ed25519");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name) {
+      toast.error("Name is required");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await onGenerate(name, keyType);
+    } catch (err) {
+      toast.error("Failed to generate key", { description: String(err) });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="modal-backdrop" onClick={onClose} />
+      <div className="modal">
+        <div className="modal-dialog">
+          <div className="modal-header">
+            <div>
+              <h2 className="modal-title">Generate Key</h2>
+              <p className="modal-subtitle">Create a new SSH key pair</p>
+            </div>
+            <button className="modal-close" onClick={onClose}><X size={14} /></button>
+          </div>
+
+          <form onSubmit={handleSubmit}>
+            <div className="modal-body">
+              <div className="form-group">
+                <label className="form-label">Name</label>
+                <input
+                  className="form-input"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="my-key"
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Key Type</label>
+                <select 
+                  className="form-input"
+                  value={keyType}
+                  onChange={(e) => setKeyType(e.target.value)}
+                >
+                  <option value="ed25519">ED25519 (Recommended)</option>
+                  <option value="rsa">RSA</option>
+                </select>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+              <button type="submit" className="btn-primary" disabled={isSubmitting}>
+                {isSubmitting ? "Generating..." : "Generate"}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </>
+  );
+}
+
 export function KeyManager() {
-  const { keys, deleteKey, loadKeys } = useKeyStore();
+  const { keys, deleteKey, loadKeys, saveKey } = useKeyStore();
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [keyToDelete, setKeyToDelete] = useState<KeyInfo | null>(null);
   const [editKey, setEditKey] = useState<KeyInfo | null>(null);
@@ -54,6 +132,16 @@ export function KeyManager() {
     setImportDialogOpen(true);
   };
 
+  const openGenerateDialog = () => {
+    setGenerateDialogOpen(true);
+  };
+
+  const handleGenerate = async (name: string, keyType: string) => {
+    await saveKey(name, keyType);
+    toast.success("Key generated");
+    setGenerateDialogOpen(false);
+  };
+
   const openEditDialog = (key: KeyInfo) => {
     setEditKey(key);
     setImportDialogOpen(true);
@@ -66,6 +154,9 @@ export function KeyManager() {
           <h1 className="keys-header-title">SSH Keys</h1>
         </div>
         <div className="keys-header-right">
+          <button className="btn-secondary" onClick={openGenerateDialog}>
+            <Plus size={14} /> Generate
+          </button>
           <button className="btn-secondary" onClick={openImportDialog}>
             <Upload size={14} /> Import
           </button>
@@ -115,6 +206,13 @@ export function KeyManager() {
         onOpenChange={setImportDialogOpen}
         editKey={editKey}
       />
+
+      {generateDialogOpen && (
+        <GenerateKeyDialog 
+          onClose={() => setGenerateDialogOpen(false)} 
+          onGenerate={handleGenerate} 
+        />
+      )}
 
       {deleteDialogOpen && keyToDelete && (
         <>

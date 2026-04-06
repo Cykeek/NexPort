@@ -7,7 +7,7 @@ A modern, cross-platform desktop SSH client built with Next.js and Tauri. NexPor
 - **SSH Terminal Connections** — Connect to remote servers via password or key-based authentication using the `russh` library.
 - **Multiple Sessions** — Manage concurrent SSH sessions with a tabbed terminal interface powered by xterm.js.
 - **SFTP File Browser** — Browse remote file systems (stub implementation — under active development).
-- **SSH Key Manager** — Store and manage SSH keys (stub implementation — under active development).
+- **SSH Key Manager** — Generate and import SSH keys for authentication.
 - **Custom Titlebar** — Frameless window with integrated window controls.
 - **Responsive Sidebar** — Searchable connection list with connection management.
 - **Encrypted Storage** — Credentials and keys are stored securely using AES-256-GCM encryption with Argon2 key derivation.
@@ -131,7 +131,7 @@ nexport/
 │   │   ├── terminal/             # Terminal pane and tab components
 │   │   ├── connections/          # Connection dialog
 │   │   ├── sftp/                 # SFTP file browser (stub)
-│   │   ├── keys/                 # SSH key manager (stub)
+│   │   ├── keys/                 # SSH key manager
 │   │   └── ui/                   # shadcn/ui primitives
 │   ├── hooks/                    # Custom React hooks
 │   ├── lib/                      # Utilities (cn helper)
@@ -224,7 +224,6 @@ Application settings are defined in `src-tauri/tauri.conf.json`:
 ## Known Limitations
 
 - **SFTP File Browser** — Currently a stub. The UI is scaffolded but file operations are not yet implemented.
-- **SSH Key Manager** — UI is scaffolded. Key generation, import, and management are not yet functional.
 - **Host Key Verification** — Uses Trust On First Use (TOFU). On first connection, the host key is accepted automatically. Subsequent connections verify against the stored key, but there is no interactive verification prompt.
 - **Platform Support** — Tauri v2 targets Windows, macOS, and Linux, but the project has primarily been tested on Windows.
 
