@@ -1,6 +1,6 @@
-# SSH Connect
+# NexPort
 
-A modern, cross-platform desktop SSH client built with Next.js and Tauri. SSH Connect provides a native-feeling terminal experience with integrated file transfer capabilities, encrypted credential storage, and a polished UI.
+A modern, cross-platform desktop SSH client built with Next.js and Tauri. NexPort provides a native-feeling terminal experience with integrated file transfer capabilities, encrypted credential storage, and a polished UI.
 
 ## Features
 
@@ -59,11 +59,34 @@ See the [Tauri prerequisites guide](https://v2.tauri.app/start/prerequisites/) f
 
 ## Getting Started
 
+### Quick Start (5 minutes)
+
+If you have Node.js and Rust installed, run these commands in your terminal:
+
+```bash
+# 1. Clone the repository and navigate to it
+cd nexport
+
+# 2. Install dependencies
+npm install
+
+# 3. Run the application
+npm run tauri dev
+```
+
+That's it! The application will open in a window. The first run takes a few minutes to compile Rust dependencies.
+
 ### Install dependencies
 
 ```bash
 npm install
 ```
+
+This installs all required packages:
+- Next.js 16 (React framework)
+- Tauri CLI (desktop app builder)
+- xterm.js (terminal emulator)
+- Various UI components
 
 ### Development
 
@@ -83,12 +106,27 @@ Build a standalone desktop application:
 npm run tauri build
 ```
 
-Bundled binaries are output to `src-tauri/target/release/bundle/`.
+Output files:
+- Windows EXE: `src-tauri/target/release/ssh-connect.exe`
+- MSI Installer: `src-tauri/target/release/bundle/msi/`
+- NSIS Installer: `src-tauri/target/release/bundle/nsis/`
+
+### Troubleshooting
+
+**"npm is not recognized"**
+- Install [Node.js](https://nodejs.org/) (v18 or higher)
+
+**"cargo is not recognized"**
+- Install [Rust](https://rustup.rs/)
+
+**"Visual Studio Build Tools not found"** (Windows)
+- Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+- Select "Desktop development with C++" workload
 
 ## Project Structure
 
 ```
-ssh-connect/
+nexport/
 ├── src/                          # Next.js frontend
 │   ├── app/                      # App Router (layout, page, globals.css)
 │   ├── components/
@@ -130,7 +168,7 @@ ssh-connect/
 
 ## Architecture
 
-SSH Connect uses a split architecture:
+NexPort uses a split architecture:
 
 ```
 ┌─────────────────────────────────────────────┐
