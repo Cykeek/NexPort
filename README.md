@@ -8,8 +8,6 @@ A modern, cross-platform desktop SSH client built with Next.js and Tauri. NexPor
 - **Multiple Sessions** — Manage concurrent SSH sessions with a tabbed terminal interface powered by xterm.js.
 - **SFTP File Browser** — Browse remote file systems (stub implementation — under active development).
 - **SSH Key Manager** — Store and manage SSH keys (stub implementation — under active development).
-- **Dark/Light Theme** — Toggle between dark and light modes.
-- **Command Palette** — Quick action access via `Ctrl+K`.
 - **Custom Titlebar** — Frameless window with integrated window controls.
 - **Responsive Sidebar** — Searchable connection list with connection management.
 - **Encrypted Storage** — Credentials and keys are stored securely using AES-256-GCM encryption with Argon2 key derivation.
@@ -26,7 +24,6 @@ A modern, cross-platform desktop SSH client built with Next.js and Tauri. NexPor
 | shadcn/ui | base-nova style | Component library |
 | xterm.js | 6.x | Terminal emulator |
 | Zustand | 5.x | State management |
-| cmdk | 1.x | Command palette |
 | react-resizable-panels | 2.x | Resizable layouts |
 
 ### Backend
@@ -135,7 +132,6 @@ nexport/
 │   │   ├── connections/          # Connection dialog
 │   │   ├── sftp/                 # SFTP file browser (stub)
 │   │   ├── keys/                 # SSH key manager (stub)
-│   │   ├── command-palette.tsx   # Ctrl+K command palette
 │   │   └── ui/                   # shadcn/ui primitives
 │   ├── hooks/                    # Custom React hooks
 │   ├── lib/                      # Utilities (cn helper)
