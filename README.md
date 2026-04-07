@@ -50,7 +50,22 @@ A modern, cross-platform desktop SSH client built with Next.js and Tauri. NexPor
 |---|---|
 | Windows | Microsoft Visual Studio C++ Build Tools |
 | macOS | Xcode Command Line Tools |
-| Linux | `build-essential`, `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `librsvg2-dev`, etc. |
+| Linux | See below |
+
+**Ubuntu/Debian:**
+```bash
+sudo apt update && sudo apt install -y build-essential libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libssl-dev pkg-config libglib2.0-dev libayatana-appindicator3-dev
+```
+
+**Fedora:**
+```bash
+sudo dnf install -y gcc-c++ libwebkit2gtk4.1-devel gtk3-devel librsvg2-devel openssl-devel pkgconfig-pcm-glib-devel libappindicator-gtk3-devel
+```
+
+**Arch Linux:**
+```bash
+sudo pacman -Syu --needed base-devel webkit2gtk-4.1 gtk3 librsvg libssl pkgconf
+```
 
 See the [Tauri prerequisites guide](https://v2.tauri.app/start/prerequisites/) for full details.
 
