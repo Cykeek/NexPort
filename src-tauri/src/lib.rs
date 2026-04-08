@@ -60,16 +60,9 @@ pub fn run() {
                 write_panic_log(&msg);
             }
             
-            // Initialize database
+            // Create empty state (database will be initialized on first save)
             let db_path = data_dir.join("connections.redb");
-            let app_state = match AppState::new(&db_path, &data_dir) {
-                Ok(s) => s,
-                Err(e) => {
-                    let msg = format!("Failed to initialize app state: {}", e);
-                    write_panic_log(&msg);
-                    return Err(e.into());
-                }
-            };
+            let app_state = AppState::new_empty(db_path, data_dir);
             
             app.manage(app_state);
             Ok(())

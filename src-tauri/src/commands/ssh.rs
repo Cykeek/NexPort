@@ -35,9 +35,17 @@ pub async fn ssh_connect(
     state: State<'_, AppState>,
 ) -> AppResult<String> {
     let (final_password, final_key_data) = if let Some(ref conn_id) = connection_id {
-        let read_txn = state.db.lock()
-            .map_err(|e| AppError::Database(e.to_string()))?
-            .begin_read()
+        // Ensure database exists
+        let db_guard = match state.get_db() {
+            Ok(guard) => guard,
+            Err(_) => return Err(AppError::Database("Database not initialized".to_string())),
+        };
+        let db = match db_guard.as_ref() {
+            Some(db) => db,
+            None => return Err(AppError::Database("Database not initialized".to_string())),
+        };
+        
+        let read_txn = db.begin_read()
             .map_err(|e| AppError::Database(e.to_string()))?;
         let connections_table = read_txn.open_table(CONNECTIONS_TABLE)
             .map_err(|e| AppError::Database(e.to_string()))?;
@@ -157,9 +165,17 @@ pub async fn ssh_detect_os(
 ) -> AppResult<String> {
     // Fetch connection details and credentials from database
     let (host, port, username, final_password, final_key_data) = {
-        let read_txn = state.db.lock()
-            .map_err(|e| AppError::Database(e.to_string()))?
-            .begin_read()
+        // Ensure database exists
+        let db_guard = match state.get_db() {
+            Ok(guard) => guard,
+            Err(_) => return Err(AppError::Database("Database not initialized".to_string())),
+        };
+        let db = match db_guard.as_ref() {
+            Some(db) => db,
+            None => return Err(AppError::Database("Database not initialized".to_string())),
+        };
+        
+        let read_txn = db.begin_read()
             .map_err(|e| AppError::Database(e.to_string()))?;
         
         let connections_table = read_txn.open_table(CONNECTIONS_TABLE)

@@ -5,6 +5,7 @@ use dashmap::DashMap;
 use rand::RngCore;
 use redb::{Database, TableDefinition};
 use std::fs;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::sync::Mutex as TokioMutex;
@@ -15,9 +16,11 @@ const SALT_FILENAME: &str = "master_salt";
 
 pub struct AppState {
     pub sessions: DashMap<String, Arc<TokioMutex<SshSession>>>,
-    pub db: Mutex<Database>,
+    pub db: Mutex<Option<Database>>,
     #[allow(dead_code)]
     pub vault: Arc<Mutex<Vault>>,
+    db_path: PathBuf,
+    data_dir: PathBuf,
 }
 
 fn derive_master_key(salt_path: &std::path::Path) -> Result<[u8; 32], Box<dyn std::error::Error>> {
@@ -49,26 +52,64 @@ fn derive_master_key(salt_path: &std::path::Path) -> Result<[u8; 32], Box<dyn st
 }
 
 impl AppState {
-    pub fn new(
-        db_path: &std::path::Path,
-        data_dir: &std::path::Path,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let db = Database::open(db_path)?;
+    /// Create an empty state (for fresh install - no database yet)
+    pub fn new_empty(db_path: PathBuf, data_dir: PathBuf) -> Self {
+        Self {
+            sessions: DashMap::new(),
+            db: Mutex::new(None),
+            vault: Arc::new(Mutex::new(Vault::new(&[0u8; 32]))), // Placeholder key, will be replaced on init
+            db_path,
+            data_dir,
+        }
+    }
+
+    /// Initialize database on first use (lazy initialization)
+    pub fn ensure_database(&self) -> Result<(), Box<dyn std::error::Error>> {
+        // Check if database already initialized
+        {
+            let db_guard = self.db.lock().map_err(|e| e.to_string())?;
+            if db_guard.is_some() {
+                return Ok(()); // Already initialized
+            }
+        }
+
+        // Ensure parent directory exists
+        if let Some(parent) = self.db_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        // Open or create database
+        let db = Database::open(&self.db_path)?;
+
+        // Create tables if new database
         {
             let write_txn = db.begin_write()?;
-            write_txn.open_table(CONNECTIONS_TABLE)?;
-            write_txn.open_table(KEYS_TABLE)?;
+            let _ = write_txn.open_table(CONNECTIONS_TABLE);
+            let _ = write_txn.open_table(KEYS_TABLE);
             write_txn.commit()?;
         }
 
-        let salt_path = data_dir.join(SALT_FILENAME);
+        // Initialize vault with master key
+        let salt_path = self.data_dir.join(SALT_FILENAME);
         let master_key = derive_master_key(&salt_path)?;
         let vault = Vault::new(&master_key);
 
-        Ok(Self {
-            sessions: DashMap::new(),
-            db: Mutex::new(db),
-            vault: Arc::new(Mutex::new(vault)),
-        })
+        // Store the database
+        let mut db_guard = self.db.lock().map_err(|e| e.to_string())?;
+        *db_guard = Some(db);
+
+        // Update vault (need to replace the placeholder)
+        let mut vault_guard = self.vault.lock().map_err(|e| e.to_string())?;
+        *vault_guard = vault;
+
+        Ok(())
+    }
+
+    /// Get database, initializing if needed
+    pub fn get_db(
+        &self,
+    ) -> Result<std::sync::MutexGuard<Option<Database>>, Box<dyn std::error::Error>> {
+        self.ensure_database()?;
+        Ok(self.db.lock().map_err(|e| e.to_string())?)
     }
 }

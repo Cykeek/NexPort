@@ -51,10 +51,14 @@ pub fn save_connection(
     profile: ConnectionProfile,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
+    // Ensure database is initialized (lazy init on first save)
+    state.ensure_database().map_err(|e| AppError::Database(e.to_string()))?;
+    
+    let db_guard = state.get_db().map_err(|e| AppError::Database(e.to_string()))?;
+    let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+    
     let json = serde_json::to_string(&profile).map_err(|e| AppError::Database(e.to_string()))?;
-    let write_txn = state.db.lock()
-        .map_err(|e| AppError::Database(e.to_string()))?
-        .begin_write()
+    let write_txn = db.begin_write()
         .map_err(|e| AppError::Database(e.to_string()))?;
     {
         let mut table = write_txn.open_table(CONNECTIONS_TABLE)
@@ -70,9 +74,17 @@ pub fn save_connection(
 pub fn get_connections(
     state: State<'_, AppState>,
 ) -> AppResult<Vec<ConnectionProfile>> {
-    let read_txn = state.db.lock()
-        .map_err(|e| AppError::Database(e.to_string()))?
-        .begin_read()
+    // Check if database exists, return empty if not initialized yet
+    let db_guard = match state.get_db() {
+        Ok(guard) => guard,
+        Err(_) => return Ok(Vec::new()), // No database yet = no connections
+    };
+    let db = match db_guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(Vec::new()), // No database yet = no connections
+    };
+    
+    let read_txn = db.begin_read()
         .map_err(|e| AppError::Database(e.to_string()))?;
     let table = read_txn.open_table(CONNECTIONS_TABLE)
         .map_err(|e| AppError::Database(e.to_string()))?;
@@ -91,9 +103,10 @@ pub fn delete_connection(
     id: String,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
-    let write_txn = state.db.lock()
-        .map_err(|e| AppError::Database(e.to_string()))?
-        .begin_write()
+    let db_guard = state.get_db().map_err(|e| AppError::Database(e.to_string()))?;
+    let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+    
+    let write_txn = db.begin_write()
         .map_err(|e| AppError::Database(e.to_string()))?;
     {
         let mut table = write_txn.open_table(CONNECTIONS_TABLE)
@@ -111,9 +124,10 @@ pub fn update_connection_os(
     os: String,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
-    let read_txn = state.db.lock()
-        .map_err(|e| AppError::Database(e.to_string()))?
-        .begin_read()
+    let db_guard = state.get_db().map_err(|e| AppError::Database(e.to_string()))?;
+    let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+    
+    let read_txn = db.begin_read()
         .map_err(|e| AppError::Database(e.to_string()))?;
     
     let value = read_txn.open_table(CONNECTIONS_TABLE)
@@ -127,9 +141,7 @@ pub fn update_connection_os(
     
     profile.detected_os = Some(os);
     
-    let write_txn = state.db.lock()
-        .map_err(|e| AppError::Database(e.to_string()))?
-        .begin_write()
+    let write_txn = db.begin_write()
         .map_err(|e| AppError::Database(e.to_string()))?;
     {
         let mut table = write_txn.open_table(CONNECTIONS_TABLE)

@@ -48,8 +48,14 @@ fn calculate_fingerprint(public_key: &PublicKey) -> String {
 }
 
 fn save_key_to_db(state: &State<'_, AppState>, id: &str, stored_key: &StoredKey) -> AppResult<()> {
+    // Ensure database is initialized (lazy init on first save)
+    state.ensure_database().map_err(|e| AppError::Database(e.to_string()))?;
+    
+    let db_guard = state.get_db().map_err(|e| AppError::Database(e.to_string()))?;
+    let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+    
     let json = serde_json::to_string(stored_key).map_err(|e| AppError::Database(e.to_string()))?;
-    let write_txn = state.db.lock().map_err(|e| AppError::Database(e.to_string()))?.begin_write().map_err(|e| AppError::Database(e.to_string()))?;
+    let write_txn = db.begin_write().map_err(|e| AppError::Database(e.to_string()))?;
     { let mut table = write_txn.open_table(KEYS_TABLE).map_err(|e| AppError::Database(e.to_string()))?; table.insert(id, json.as_str()).map_err(|e| AppError::Database(e.to_string()))?; }
     write_txn.commit().map_err(|e| AppError::Database(e.to_string()))?;
     Ok(())
@@ -134,7 +140,17 @@ pub async fn import_key(name: String, key_data: String, state: State<'_, AppStat
 
 #[tauri::command]
 pub async fn list_keys(state: State<'_, AppState>) -> AppResult<Vec<KeyInfo>> {
-    let read_txn = state.db.lock().map_err(|e| AppError::Database(e.to_string()))?.begin_read().map_err(|e| AppError::Database(e.to_string()))?;
+    // Check if database exists, return empty if not initialized yet
+    let db_guard = match state.get_db() {
+        Ok(guard) => guard,
+        Err(_) => return Ok(Vec::new()), // No database yet = no keys
+    };
+    let db = match db_guard.as_ref() {
+        Some(db) => db,
+        None => return Ok(Vec::new()), // No database yet = no keys
+    };
+    
+    let read_txn = db.begin_read().map_err(|e| AppError::Database(e.to_string()))?;
     let table = read_txn.open_table(KEYS_TABLE).map_err(|e| AppError::Database(e.to_string()))?;
     let mut keys = Vec::new();
     for row in table.iter().map_err(|e| AppError::Database(e.to_string()))? {
@@ -147,7 +163,10 @@ pub async fn list_keys(state: State<'_, AppState>) -> AppResult<Vec<KeyInfo>> {
 
 #[tauri::command]
 pub async fn delete_key(id: String, state: State<'_, AppState>) -> AppResult<()> {
-    let write_txn = state.db.lock().map_err(|e| AppError::Database(e.to_string()))?.begin_write().map_err(|e| AppError::Database(e.to_string()))?;
+    let db_guard = state.get_db().map_err(|e| AppError::Database(e.to_string()))?;
+    let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+    
+    let write_txn = db.begin_write().map_err(|e| AppError::Database(e.to_string()))?;
     { let mut t = write_txn.open_table(KEYS_TABLE).map_err(|e| AppError::Database(e.to_string()))?; t.remove(id.as_str()).map_err(|e| AppError::Database(e.to_string()))?; }
     write_txn.commit().map_err(|e| AppError::Database(e.to_string()))?;
     Ok(())
@@ -155,13 +174,16 @@ pub async fn delete_key(id: String, state: State<'_, AppState>) -> AppResult<()>
 
 #[tauri::command]
 pub async fn update_key(id: String, name: String, state: State<'_, AppState>) -> AppResult<()> {
-    let read_txn = state.db.lock().map_err(|e| AppError::Database(e.to_string()))?.begin_read().map_err(|e| AppError::Database(e.to_string()))?;
+    let db_guard = state.get_db().map_err(|e| AppError::Database(e.to_string()))?;
+    let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+    
+    let read_txn = db.begin_read().map_err(|e| AppError::Database(e.to_string()))?;
     let table = read_txn.open_table(KEYS_TABLE).map_err(|e| AppError::Database(e.to_string()))?;
     let value = table.get(id.as_str()).map_err(|e| AppError::Database(e.to_string()))?.ok_or_else(|| AppError::Key("Not found".to_string()))?;
     let mut stored_key: StoredKey = serde_json::from_str(value.value()).map_err(|e| AppError::Database(e.to_string()))?;
     stored_key.name = name;
     
-    let write_txn = state.db.lock().map_err(|e| AppError::Database(e.to_string()))?.begin_write().map_err(|e| AppError::Database(e.to_string()))?;
+    let write_txn = db.begin_write().map_err(|e| AppError::Database(e.to_string()))?;
     { let mut t = write_txn.open_table(KEYS_TABLE).map_err(|e| AppError::Database(e.to_string()))?; 
       let json = serde_json::to_string(&stored_key).map_err(|e| AppError::Database(e.to_string()))?;
       t.insert(id.as_str(), json.as_str()).map_err(|e| AppError::Database(e.to_string()))?; 
@@ -178,7 +200,10 @@ pub async fn update_key_with_new_key(id: String, name: String, key_data: String,
     let fingerprint = public_key.fingerprint(Default::default()).to_string();
     let key_type = "ed25519".to_string();
     
-    let read_txn = state.db.lock().map_err(|e| AppError::Database(e.to_string()))?.begin_read().map_err(|e| AppError::Database(e.to_string()))?;
+    let db_guard = state.get_db().map_err(|e| AppError::Database(e.to_string()))?;
+    let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+    
+    let read_txn = db.begin_read().map_err(|e| AppError::Database(e.to_string()))?;
     let table = read_txn.open_table(KEYS_TABLE).map_err(|e| AppError::Database(e.to_string()))?;
     let value = table.get(id.as_str()).map_err(|e| AppError::Database(e.to_string()))?.ok_or_else(|| AppError::Key("Not found".to_string()))?;
     let stored_key: StoredKey = serde_json::from_str(value.value()).map_err(|e| AppError::Database(e.to_string()))?;
@@ -191,7 +216,7 @@ pub async fn update_key_with_new_key(id: String, name: String, key_data: String,
         encrypted_key_data: normalized_key,
     };
     
-    let write_txn = state.db.lock().map_err(|e| AppError::Database(e.to_string()))?.begin_write().map_err(|e| AppError::Database(e.to_string()))?;
+    let write_txn = db.begin_write().map_err(|e| AppError::Database(e.to_string()))?;
     { let mut t = write_txn.open_table(KEYS_TABLE).map_err(|e| AppError::Database(e.to_string()))?; 
       let json = serde_json::to_string(&new_stored_key).map_err(|e| AppError::Database(e.to_string()))?;
       t.insert(id.as_str(), json.as_str()).map_err(|e| AppError::Database(e.to_string()))?; 
@@ -202,7 +227,10 @@ pub async fn update_key_with_new_key(id: String, name: String, key_data: String,
 
 #[tauri::command]
 pub async fn get_key_data(id: String, state: State<'_, AppState>) -> AppResult<KeyData> {
-    let read_txn = state.db.lock().map_err(|e| AppError::Database(e.to_string()))?.begin_read().map_err(|e| AppError::Database(e.to_string()))?;
+    let db_guard = state.get_db().map_err(|e| AppError::Database(e.to_string()))?;
+    let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+    
+    let read_txn = db.begin_read().map_err(|e| AppError::Database(e.to_string()))?;
     let table = read_txn.open_table(KEYS_TABLE).map_err(|e| AppError::Database(e.to_string()))?;
     let value = table.get(id.as_str()).map_err(|e| AppError::Database(e.to_string()))?.ok_or_else(|| AppError::Key("Not found".to_string()))?;
     let stored_key: StoredKey = serde_json::from_str(value.value()).map_err(|e| AppError::Database(e.to_string()))?;
