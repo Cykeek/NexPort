@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "SSH Connect",
+  "productName": "NexPort",
   "version": "0.1.0",
-  "identifier": "com.sshconnect.app",
+  "identifier": "com.nexport.desktop",
   "build": {
     "frontendDist": "../out",
     "devUrl": "http://localhost:3000",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "SSH Connect",
+        "title": "NexPort",
         "width": 1200,
         "height": 800,
         "resizable": true,
