@@ -73,10 +73,37 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+
+      - name: Create latest.json for updater
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          COMMIT_SHA=${{ github.sha }}
+          
+          # Create latest.json with Windows exe
+          cat > latest.json << EOF
+          {
+            "version": "$VERSION-dev.$COMMIT_SHA",
+            "notes": "Dev build",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": {
+              "windows-x86_64": {
+                "signature": "",
+                "url": "https://github.com/Cykeek/NexPort/releases/download/dev-$COMMIT_SHA/NexPort_${VERSION}_x64-setup.exe"
+              }
+            }
+          }
+          EOF
+          cat latest.json
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -89,5 +116,6 @@ jobs:
             artifacts/nexport-windows-*/**/*
             artifacts/nexport-linux-*/**/*
             artifacts/nexport-macos-*/**/*
+            latest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
