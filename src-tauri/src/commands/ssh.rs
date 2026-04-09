@@ -5,18 +5,10 @@ use crate::state::AppState;
 use crate::ssh::session::SshSession;
 use crate::error::{AppResult, AppError};
 use crate::commands::connections::ConnectionProfile;
-use crate::crypto::decrypt_field;
-use base64::Engine;
+use crate::crypto::{decrypt_field, decrypt_key_data};
 
 const CONNECTIONS_TABLE: redb::TableDefinition<&str, &str> = redb::TableDefinition::new("connections");
 const KEYS_TABLE: redb::TableDefinition<&str, &str> = redb::TableDefinition::new("keys");
-
-fn decrypt_key_data(vault: &std::sync::Mutex<crate::vault::encryptor::Vault>, encrypted_b64: &str) -> Result<String, AppError> {
-    let encrypted = base64::engine::general_purpose::STANDARD.decode(encrypted_b64).map_err(|e| AppError::Database(e.to_string()))?;
-    let vault = vault.lock().map_err(|e| AppError::Database(e.to_string()))?;
-    let decrypted = vault.decrypt(&encrypted).map_err(|e| AppError::Database(e))?;
-    String::from_utf8(decrypted).map_err(|e| AppError::Database(e.to_string()))
-}
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]

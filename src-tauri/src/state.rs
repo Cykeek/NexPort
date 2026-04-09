@@ -17,7 +17,6 @@ const SALT_FILENAME: &str = "master_salt";
 pub struct AppState {
     pub sessions: DashMap<String, Arc<TokioMutex<SshSession>>>,
     pub db: Mutex<Option<Database>>,
-    #[allow(dead_code)]
     pub vault: Arc<Mutex<Vault>>,
     db_path: PathBuf,
     data_dir: PathBuf,
@@ -76,25 +75,12 @@ impl AppState {
             }
         }
 
-        // Clean up any stale redb temp files from previous crashes
         let wal_path = self.db_path.with_extension("redb.wal");
         let shm_path = self.db_path.with_extension("redb.shm");
-        if wal_path.exists() {
-            fs::remove_file(&wal_path).ok();
-        }
-        if shm_path.exists() {
-            fs::remove_file(&shm_path).ok();
-        }
+        wal_path.exists().then(|| fs::remove_file(&wal_path).ok());
+        shm_path.exists().then(|| fs::remove_file(&shm_path).ok());
 
-        let db = match Database::create(&self.db_path) {
-            Ok(db) => db,
-            Err(_create_err) => {
-                match Database::open(&self.db_path) {
-                    Ok(db) => db,
-                    Err(open_err) => return Err(Box::new(open_err)),
-                }
-            }
-        };
+        let db = Database::create(&self.db_path).or_else(|_| Database::open(&self.db_path))?;
 
         {
             let write_txn = db.begin_write()?;
@@ -105,13 +91,12 @@ impl AppState {
 
         let salt_path = self.data_dir.join(SALT_FILENAME);
         let master_key = derive_master_key(&salt_path)?;
-        let vault = Vault::new(&master_key);
 
         let mut db_guard = self.db.lock().map_err(|e| e.to_string())?;
         *db_guard = Some(db);
 
         let mut vault_guard = self.vault.lock().map_err(|e| e.to_string())?;
-        *vault_guard = vault;
+        *vault_guard = Vault::new(&master_key);
 
         Ok(())
     }

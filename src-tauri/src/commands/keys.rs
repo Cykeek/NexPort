@@ -3,6 +3,7 @@ use tauri::State;
 use redb::{ReadableTable, TableDefinition};
 use crate::state::AppState;
 use crate::error::{AppResult, AppError};
+use crate::crypto::{encrypt_key_data, decrypt_key_data};
 use ssh_key::{LineEnding, PrivateKey as SshPrivateKey};
 use russh_keys::{PrivateKey, PublicKey};
 use base64::Engine;
@@ -58,19 +59,6 @@ fn save_key_to_db(state: &State<'_, AppState>, id: &str, stored_key: &StoredKey)
     { let mut table = write_txn.open_table(KEYS_TABLE).map_err(|e| AppError::Database(e.to_string()))?; table.insert(id, json.as_str()).map_err(|e| AppError::Database(e.to_string()))?; }
     write_txn.commit().map_err(|e| AppError::Database(e.to_string()))?;
     Ok(())
-}
-
-fn encrypt_key_data(vault: &std::sync::Mutex<crate::vault::encryptor::Vault>, key_data: &str) -> Result<String, AppError> {
-    let vault = vault.lock().map_err(|e| AppError::Database(e.to_string()))?;
-    let encrypted = vault.encrypt(key_data.as_bytes()).map_err(|e| AppError::Database(e))?;
-    Ok(base64::engine::general_purpose::STANDARD.encode(&encrypted))
-}
-
-fn decrypt_key_data(vault: &std::sync::Mutex<crate::vault::encryptor::Vault>, encrypted_b64: &str) -> Result<String, AppError> {
-    let encrypted = base64::engine::general_purpose::STANDARD.decode(encrypted_b64).map_err(|e| AppError::Database(e.to_string()))?;
-    let vault = vault.lock().map_err(|e| AppError::Database(e.to_string()))?;
-    let decrypted = vault.decrypt(&encrypted).map_err(|e| AppError::Database(e))?;
-    String::from_utf8(decrypted).map_err(|e| AppError::Database(e.to_string()))
 }
 
 // SIMPLE key parser - finds ssh-ed25519 and extracts raw key material
