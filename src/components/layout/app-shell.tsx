@@ -8,11 +8,12 @@ import { Toaster } from "sonner";
 import { Minus, Square, X } from "lucide-react";
 import { ConnectionsPage } from "@/components/connections/connections-page";
 import { KeyManager } from "@/components/keys/key-manager";
+import { SettingsPage } from "@/components/settings/settings-page";
 import { useWindowControls } from "@/hooks/use-window-controls";
 
 export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [activePage, setActivePage] = useState<"connections" | "keys">("connections");
+  const [activePage, setActivePage] = useState<"connections" | "keys" | "settings">("connections");
   const { handleMinimize, handleMaximize, handleClose, dragRef } = useWindowControls();
 
   return (
@@ -46,6 +47,7 @@ export function AppShell() {
         <ContentArea>
           {activePage === "connections" && <ConnectionsPage />}
           {activePage === "keys" && <KeyManager />}
+          {activePage === "settings" && <SettingsPage />}
         </ContentArea>
       </div>
 

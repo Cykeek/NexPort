@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: ['**']
 
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
@@ -61,3 +64,43 @@ jobs:
           path: |
             src-tauri/target/release/bundle/**/*
             !src-tauri/target/release/bundle/**/*.sha256
+
+  release:
+    needs: build
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: dev-${{ github.sha }}
+          name: NexPort Dev Build
+          draft: false
+          prerelease: true
+          files: |
+            artifacts/nexport-windows-*/**/*
+            artifacts/nexport-linux-*/**/*
+            artifacts/nexport-macos-*/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

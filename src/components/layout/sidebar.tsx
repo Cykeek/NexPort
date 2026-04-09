@@ -1,11 +1,11 @@
 "use client";
 
-import { Server, Key } from "lucide-react";
+import { Server, Key, Settings } from "lucide-react";
 
 interface SidebarProps {
   open: boolean;
-  activeNav: "connections" | "keys";
-  onNavChange: (nav: "connections" | "keys") => void;
+  activeNav: "connections" | "keys" | "settings";
+  onNavChange: (nav: "connections" | "keys" | "settings") => void;
 }
 
 export function AppSidebar({ open, activeNav, onNavChange }: SidebarProps) {
@@ -28,6 +28,13 @@ export function AppSidebar({ open, activeNav, onNavChange }: SidebarProps) {
         >
           <Key className="sidebar-nav-item-icon" size={16} />
           <span>Keys</span>
+        </button>
+        <button 
+          className={`sidebar-nav-item ${activeNav === "settings" ? "active" : ""}`}
+          onClick={() => onNavChange("settings")}
+        >
+          <Settings className="sidebar-nav-item-icon" size={16} />
+          <span>Settings</span>
         </button>
       </div>
     </div>
