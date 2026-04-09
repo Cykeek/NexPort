@@ -70,6 +70,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::ssh::ssh_connect,
             commands::ssh::ssh_disconnect,
+            commands::ssh::ssh_is_connected,
             commands::ssh::ssh_resize,
             commands::ssh::ssh_write,
             commands::ssh::ssh_read,

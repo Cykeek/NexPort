@@ -52,36 +52,50 @@ fn derive_master_key(salt_path: &std::path::Path) -> Result<[u8; 32], Box<dyn st
 }
 
 impl AppState {
-    /// Create an empty state (for fresh install - no database yet)
     pub fn new_empty(db_path: PathBuf, data_dir: PathBuf) -> Self {
         Self {
             sessions: DashMap::new(),
             db: Mutex::new(None),
-            vault: Arc::new(Mutex::new(Vault::new(&[0u8; 32]))), // Placeholder key, will be replaced on init
+            vault: Arc::new(Mutex::new(Vault::new(&[0u8; 32]))),
             db_path,
             data_dir,
         }
     }
 
-    /// Initialize database on first use (lazy initialization)
     pub fn ensure_database(&self) -> Result<(), Box<dyn std::error::Error>> {
-        // Check if database already initialized
         {
             let db_guard = self.db.lock().map_err(|e| e.to_string())?;
             if db_guard.is_some() {
-                return Ok(()); // Already initialized
+                return Ok(());
             }
         }
 
-        // Ensure parent directory exists
         if let Some(parent) = self.db_path.parent() {
-            fs::create_dir_all(parent)?;
+            if !parent.exists() {
+                fs::create_dir_all(parent)?;
+            }
         }
 
-        // Open or create database
-        let db = Database::open(&self.db_path)?;
+        // Clean up any stale redb temp files from previous crashes
+        let wal_path = self.db_path.with_extension("redb.wal");
+        let shm_path = self.db_path.with_extension("redb.shm");
+        if wal_path.exists() {
+            fs::remove_file(&wal_path).ok();
+        }
+        if shm_path.exists() {
+            fs::remove_file(&shm_path).ok();
+        }
 
-        // Create tables if new database
+        let db = match Database::create(&self.db_path) {
+            Ok(db) => db,
+            Err(_create_err) => {
+                match Database::open(&self.db_path) {
+                    Ok(db) => db,
+                    Err(open_err) => return Err(Box::new(open_err)),
+                }
+            }
+        };
+
         {
             let write_txn = db.begin_write()?;
             let _ = write_txn.open_table(CONNECTIONS_TABLE);
@@ -89,26 +103,22 @@ impl AppState {
             write_txn.commit()?;
         }
 
-        // Initialize vault with master key
         let salt_path = self.data_dir.join(SALT_FILENAME);
         let master_key = derive_master_key(&salt_path)?;
         let vault = Vault::new(&master_key);
 
-        // Store the database
         let mut db_guard = self.db.lock().map_err(|e| e.to_string())?;
         *db_guard = Some(db);
 
-        // Update vault (need to replace the placeholder)
         let mut vault_guard = self.vault.lock().map_err(|e| e.to_string())?;
         *vault_guard = vault;
 
         Ok(())
     }
 
-    /// Get database, initializing if needed
     pub fn get_db(
         &self,
-    ) -> Result<std::sync::MutexGuard<Option<Database>>, Box<dyn std::error::Error>> {
+    ) -> Result<std::sync::MutexGuard<'_, Option<Database>>, Box<dyn std::error::Error>> {
         self.ensure_database()?;
         Ok(self.db.lock().map_err(|e| e.to_string())?)
     }

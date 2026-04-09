@@ -1,13 +1,33 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use russh::*;
 use russh::keys::*;
 use zeroize::Zeroize;
+
+#[derive(Debug, Clone)]
+pub struct UnknownHostKey {
+    pub host: String,
+    pub port: u16,
+    pub key_type: String,
+    pub fingerprint: String,
+}
+
+impl std::fmt::Display for UnknownHostKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Unknown host key for {}:{} (type: {}, fingerprint: {})", 
+            self.host, self.port, self.key_type, self.fingerprint)
+    }
+}
+
+impl std::error::Error for UnknownHostKey {}
 
 pub(crate) struct ClientHandler {
     host: String,
     port: u16,
     known_hosts_path: PathBuf,
+    pub unknown_key: Option<UnknownHostKey>,
+    pub trust_on_first_use: Arc<AtomicBool>,
 }
 
 impl client::Handler for ClientHandler {
@@ -23,16 +43,36 @@ impl client::Handler for ClientHandler {
             server_public_key,
             &self.known_hosts_path,
         ) {
-            Ok(true) => Ok(true),
+            Ok(true) => Ok(true), // Known and matching
             Ok(false) => {
-                known_hosts::learn_known_hosts_path(
-                    &self.host,
-                    self.port,
-                    server_public_key,
-                    &self.known_hosts_path,
-                )
-                .map_err(|_| russh::Error::KeyChanged { line: 0 })?;
-                Ok(true)
+                // Store info for potential user prompt
+                let key_type = format!("{:?}", server_public_key.algorithm());
+                let fingerprint = server_public_key.fingerprint(Default::default()).to_string();
+                
+                // Check if TOFU is enabled
+                if self.trust_on_first_use.load(Ordering::SeqCst) {
+                    log::warn!("[SECURITY] First connection to {}:{}. Auto-accepting host key (TOFU). Fingerprint: {}", 
+                        self.host, self.port, fingerprint);
+                    known_hosts::learn_known_hosts_path(
+                        &self.host,
+                        self.port,
+                        server_public_key,
+                        &self.known_hosts_path,
+                    )
+                    .map_err(|_| russh::Error::KeyChanged { line: 0 })?;
+                    Ok(true)
+                } else {
+                    // Store for frontend to prompt user
+                    self.unknown_key = Some(UnknownHostKey {
+                        host: self.host.clone(),
+                        port: self.port,
+                        key_type,
+                        fingerprint,
+                    });
+                    log::warn!("[SECURITY] Unknown host key for {}:{}. Connection requires user verification.", 
+                        self.host, self.port);
+                    Err(russh::Error::KeyChanged { line: 0 })
+                }
             }
             Err(_) => Err(russh::Error::KeyChanged { line: 0 }),
         }
@@ -65,6 +105,7 @@ impl SshSession {
         username: &str,
         password: Option<&str>,
         key_data: Option<&str>,
+        trust_on_first_use: bool,
     ) -> Result<Self, String> {
         let known_hosts_path = get_known_hosts_path();
         let config = Arc::new(client::Config::default());
@@ -74,6 +115,8 @@ impl SshSession {
             host: host.to_string(),
             port,
             known_hosts_path,
+            unknown_key: None,
+            trust_on_first_use: Arc::new(std::sync::atomic::AtomicBool::new(trust_on_first_use)),
         };
 
         let mut session = client::connect(config, addr, handler)
@@ -154,6 +197,7 @@ impl SshSession {
         let ch = self.channel.as_mut().ok_or("No channel available")?;
         
         let mut output = String::new();
+        let mut got_eof = false;
         let start = std::time::Instant::now();
         
         loop {
@@ -174,18 +218,26 @@ impl SshSession {
                             output.push_str(&text);
                         }
                         ChannelMsg::Eof => {
+                            got_eof = true;
                             break;
                         }
                         _ => {}
                     }
                 }
                 Ok(None) => {
+                    got_eof = true;
                     break;
                 }
                 Err(_) => {
                     break;
                 }
             }
+        }
+        
+        // If we received EOF, return empty string with EOF indicator
+        // The frontend will detect this and close the terminal
+        if got_eof && output.is_empty() {
+            return Ok("__EOF__".to_string());
         }
         
         Ok(output)

@@ -48,7 +48,6 @@ fn calculate_fingerprint(public_key: &PublicKey) -> String {
 }
 
 fn save_key_to_db(state: &State<'_, AppState>, id: &str, stored_key: &StoredKey) -> AppResult<()> {
-    // Ensure database is initialized (lazy init on first save)
     state.ensure_database().map_err(|e| AppError::Database(e.to_string()))?;
     
     let db_guard = state.get_db().map_err(|e| AppError::Database(e.to_string()))?;
@@ -59,6 +58,19 @@ fn save_key_to_db(state: &State<'_, AppState>, id: &str, stored_key: &StoredKey)
     { let mut table = write_txn.open_table(KEYS_TABLE).map_err(|e| AppError::Database(e.to_string()))?; table.insert(id, json.as_str()).map_err(|e| AppError::Database(e.to_string()))?; }
     write_txn.commit().map_err(|e| AppError::Database(e.to_string()))?;
     Ok(())
+}
+
+fn encrypt_key_data(vault: &std::sync::Mutex<crate::vault::encryptor::Vault>, key_data: &str) -> Result<String, AppError> {
+    let vault = vault.lock().map_err(|e| AppError::Database(e.to_string()))?;
+    let encrypted = vault.encrypt(key_data.as_bytes()).map_err(|e| AppError::Database(e))?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(&encrypted))
+}
+
+fn decrypt_key_data(vault: &std::sync::Mutex<crate::vault::encryptor::Vault>, encrypted_b64: &str) -> Result<String, AppError> {
+    let encrypted = base64::engine::general_purpose::STANDARD.decode(encrypted_b64).map_err(|e| AppError::Database(e.to_string()))?;
+    let vault = vault.lock().map_err(|e| AppError::Database(e.to_string()))?;
+    let decrypted = vault.decrypt(&encrypted).map_err(|e| AppError::Database(e))?;
+    String::from_utf8(decrypted).map_err(|e| AppError::Database(e.to_string()))
 }
 
 // SIMPLE key parser - finds ssh-ed25519 and extracts raw key material
@@ -115,14 +127,17 @@ pub async fn generate_key(name: String, key_type: String, _passphrase: Option<St
     let public_key = private_key.public_key();
     let fingerprint = public_key.fingerprint(Default::default()).to_string();
     let key_data = private_key.to_openssh(LineEnding::LF).map_err(|e| AppError::Key(format!("Ser: {}", e)))?.to_string();
+    
+    // Encrypt the private key before storing
+    let encrypted_key_data = encrypt_key_data(&state.vault, &key_data)?;
+    
     let id = format!("key_{}", uuid::Uuid::new_v4());
-    save_key_to_db(&state, &id, &StoredKey { id: id.clone(), name: name.clone(), key_type: key_type.clone(), fingerprint: fingerprint.clone(), encrypted_key_data: key_data })?;
+    save_key_to_db(&state, &id, &StoredKey { id: id.clone(), name: name.clone(), key_type: key_type.clone(), fingerprint: fingerprint.clone(), encrypted_key_data })?;
     Ok(KeyInfo { id, name, key_type, fingerprint })
 }
 
 #[tauri::command]
 pub async fn import_key(name: String, key_data: String, state: State<'_, AppState>) -> AppResult<KeyInfo> {
-    // Save the ORIGINAL key content directly without parsing/re-serializing
     let normalized_key = key_data.trim().to_string();
     
     // Decode to verify it's valid and get fingerprint
@@ -130,12 +145,20 @@ pub async fn import_key(name: String, key_data: String, state: State<'_, AppStat
     let public_key = private_key.public_key();
     let fingerprint = public_key.fingerprint(Default::default()).to_string();
     
-    let key_type = "ed25519".to_string();
-    let id = format!("key_{}", uuid::Uuid::new_v4());
+    // Detect actual key type
+    let key_type = match public_key.algorithm() {
+        ssh_key::Algorithm::Ed25519 => "ed25519",
+        ssh_key::Algorithm::Rsa { .. } => "rsa",
+        ssh_key::Algorithm::Ecdsa { .. } => "ecdsa",
+        _ => "unknown",
+    };
     
-    // Save the ORIGINAL key content, not the re-serialized one
-    save_key_to_db(&state, &id, &StoredKey { id: id.clone(), name: name.clone(), key_type: key_type.clone(), fingerprint: fingerprint.clone(), encrypted_key_data: normalized_key })?;
-    Ok(KeyInfo { id, name, key_type, fingerprint })
+    // Encrypt the private key before storing
+    let encrypted_key_data = encrypt_key_data(&state.vault, &normalized_key)?;
+    
+    let id = format!("key_{}", uuid::Uuid::new_v4());
+    save_key_to_db(&state, &id, &StoredKey { id: id.clone(), name: name.clone(), key_type: key_type.to_string(), fingerprint: fingerprint.clone(), encrypted_key_data })?;
+    Ok(KeyInfo { id, name, key_type: key_type.to_string(), fingerprint })
 }
 
 #[tauri::command]
@@ -198,7 +221,17 @@ pub async fn update_key_with_new_key(id: String, name: String, key_data: String,
     let private_key = parse_private_key(&normalized_key).map_err(AppError::Key)?;
     let public_key = private_key.public_key();
     let fingerprint = public_key.fingerprint(Default::default()).to_string();
-    let key_type = "ed25519".to_string();
+    
+    // Detect actual key type
+    let key_type = match public_key.algorithm() {
+        ssh_key::Algorithm::Ed25519 => "ed25519",
+        ssh_key::Algorithm::Rsa { .. } => "rsa",
+        ssh_key::Algorithm::Ecdsa { .. } => "ecdsa",
+        _ => "unknown",
+    };
+    
+    // Encrypt the new key data
+    let encrypted_key_data = encrypt_key_data(&state.vault, &normalized_key)?;
     
     let db_guard = state.get_db().map_err(|e| AppError::Database(e.to_string()))?;
     let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
@@ -211,9 +244,9 @@ pub async fn update_key_with_new_key(id: String, name: String, key_data: String,
     let new_stored_key = StoredKey {
         id: stored_key.id,
         name,
-        key_type,
+        key_type: key_type.to_string(),
         fingerprint,
-        encrypted_key_data: normalized_key,
+        encrypted_key_data,
     };
     
     let write_txn = db.begin_write().map_err(|e| AppError::Database(e.to_string()))?;
@@ -234,7 +267,9 @@ pub async fn get_key_data(id: String, state: State<'_, AppState>) -> AppResult<K
     let table = read_txn.open_table(KEYS_TABLE).map_err(|e| AppError::Database(e.to_string()))?;
     let value = table.get(id.as_str()).map_err(|e| AppError::Database(e.to_string()))?.ok_or_else(|| AppError::Key("Not found".to_string()))?;
     let stored_key: StoredKey = serde_json::from_str(value.value()).map_err(|e| AppError::Database(e.to_string()))?;
-    let private_key = stored_key.encrypted_key_data.clone();
+    
+    // Decrypt the private key
+    let private_key = decrypt_key_data(&state.vault, &stored_key.encrypted_key_data)?;
     let parsed = parse_private_key(&private_key).map_err(AppError::Key)?;
     let public_key = parsed.public_key().to_openssh().map_err(|e| AppError::Key(format!("Ser: {}", e)))?.to_string();
     Ok(KeyData { id: stored_key.id, name: stored_key.name, key_type: stored_key.key_type, fingerprint: stored_key.fingerprint, public_key, private_key })

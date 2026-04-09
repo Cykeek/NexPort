@@ -98,6 +98,24 @@ export default function TerminalPage() {
     }
   };
 
+  const handleConnectionLost = (tab: TerminalTab, term: XTerm) => {
+    pollingRef.current.delete(tab.sessionId);
+    term.dispose();
+    terminalsRef.current.delete(tab.id);
+    fitAddonsRef.current.delete(tab.id);
+    
+    setTabs((prevTabs) => {
+      const remainingTabs = prevTabs.filter(t => t.id !== tab.id);
+      if (remainingTabs.length === 0) {
+        pollingRef.current.clear();
+        winClose();
+      } else if (activeTabId === tab.id) {
+        setActiveTabId(remainingTabs[0].id);
+      }
+      return remainingTabs;
+    });
+  };
+
   const initTerminal = useCallback((tab: TerminalTab) => {
     const container = document.getElementById(`terminal-${tab.id}`);
     if (!container || terminalsRef.current.has(tab.id)) return;
@@ -141,8 +159,60 @@ export default function TerminalPage() {
     });
 
     pollingRef.current.add(tab.sessionId);
-    pollOutput(tab.id, tab.sessionId);
-  }, []);
+    
+    // Track if we've received any data from the server
+    const hasReceivedData = { current: false };
+    
+    // Start polling for output
+    const poll = async () => {
+      if (!pollingRef.current.has(tab.sessionId)) return;
+      
+      try {
+        // Try to read data
+        const data = await invoke<string>("ssh_read", { 
+          sessionId: tab.sessionId, 
+          timeoutMs: 100 
+        });
+        
+        // Check for EOF signal from backend
+        if (data === "__EOF__") {
+          console.log("Connection closed (EOF received), closing terminal");
+          handleConnectionLost(tab, term);
+          return;
+        }
+        
+        // Track if we've received any data
+        if (data && data.length > 0) {
+          hasReceivedData.current = true;
+          term.write(data);
+        }
+      } catch (e: unknown) {
+        // On connection errors (network loss, server disconnect, etc), close the terminal
+        const errorStr = String(e).toLowerCase();
+        const isConnectionError = 
+          errorStr.includes("sessionnotfound") ||
+          errorStr.includes("eof") ||
+          errorStr.includes("channel") ||
+          errorStr.includes("connection") ||
+          errorStr.includes("reset") ||
+          errorStr.includes("broken") ||
+          errorStr.includes("transport") ||
+          errorStr.includes("disconnected");
+        
+        if (isConnectionError) {
+          console.log("Connection lost, closing terminal...", String(e));
+          handleConnectionLost(tab, term);
+          return;
+        }
+      }
+      
+      // Continue polling
+      if (pollingRef.current.has(tab.sessionId)) {
+        setTimeout(poll, 50);
+      }
+    };
+    poll();
+  }, [winClose, activeTabId]);
 
   const pollOutput = useCallback(async (tabId: string, sessionId: string) => {
     if (!pollingRef.current.has(sessionId)) {
@@ -182,13 +252,20 @@ export default function TerminalPage() {
 
   useEffect(() => {
     const handleResize = () => {
-      fitAddonsRef.current.forEach((fitAddon) => {
+      fitAddonsRef.current.forEach((fitAddon, tabId) => {
         fitAddon.fit();
+        const tab = tabs.find(t => t.id === tabId);
+        if (tab) {
+          const dims = fitAddon.proposeDimensions();
+          if (dims && dims.cols && dims.rows) {
+            invoke("ssh_resize", { sessionId: tab.sessionId, cols: dims.cols, rows: dims.rows }).catch(() => {});
+          }
+        }
       });
     };
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, []);
+  }, [tabs]);
 
   const handleTabClick = (tabId: string) => {
     setActiveTabId(tabId);

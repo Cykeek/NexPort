@@ -18,9 +18,13 @@ export function KeyActionDialog({ open, onOpenChange, editKey }: KeyActionDialog
 
   useEffect(() => {
     if (open) {
-      setForm({ name: "", privateKey: "" });
+      if (editKey) {
+        setForm({ name: editKey.name, privateKey: "" });
+      } else {
+        setForm({ name: "", privateKey: "" });
+      }
     }
-  }, [open]);
+  }, [open, editKey]);
 
   if (!open) return null;
 

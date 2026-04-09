@@ -3,6 +3,7 @@ use tauri::State;
 use redb::{ReadableTable, TableDefinition};
 use crate::state::AppState;
 use crate::error::{AppResult, AppError};
+use crate::crypto::{encrypt_field, decrypt_field};
 use std::time::Duration;
 
 const CONNECTIONS_TABLE: TableDefinition<&str, &str> = TableDefinition::new("connections");
@@ -48,11 +49,17 @@ pub async fn check_host_status(host: String, port: u16) -> Result<HostStatus, St
 
 #[tauri::command]
 pub fn save_connection(
-    profile: ConnectionProfile,
+    mut profile: ConnectionProfile,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
-    // Ensure database is initialized (lazy init on first save)
     state.ensure_database().map_err(|e| AppError::Database(e.to_string()))?;
+    
+    if let Some(ref password) = profile.encrypted_password {
+        if !password.is_empty() {
+            let encrypted = encrypt_field(&state.vault, password)?;
+            profile.encrypted_password = Some(encrypted);
+        }
+    }
     
     let db_guard = state.get_db().map_err(|e| AppError::Database(e.to_string()))?;
     let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
@@ -74,14 +81,13 @@ pub fn save_connection(
 pub fn get_connections(
     state: State<'_, AppState>,
 ) -> AppResult<Vec<ConnectionProfile>> {
-    // Check if database exists, return empty if not initialized yet
     let db_guard = match state.get_db() {
         Ok(guard) => guard,
-        Err(_) => return Ok(Vec::new()), // No database yet = no connections
+        Err(_) => return Ok(Vec::new()),
     };
     let db = match db_guard.as_ref() {
         Some(db) => db,
-        None => return Ok(Vec::new()), // No database yet = no connections
+        None => return Ok(Vec::new()),
     };
     
     let read_txn = db.begin_read()
@@ -91,8 +97,17 @@ pub fn get_connections(
     let mut connections = Vec::new();
     for row in table.iter().map_err(|e| AppError::Database(e.to_string()))? {
         let (_, value) = row.map_err(|e| AppError::Database(e.to_string()))?;
-        let profile: ConnectionProfile = serde_json::from_str(value.value())
+        let mut profile: ConnectionProfile = serde_json::from_str(value.value())
             .map_err(|e| AppError::Database(e.to_string()))?;
+        
+        if let Some(ref encrypted) = profile.encrypted_password {
+            if !encrypted.is_empty() {
+                if let Ok(decrypted) = decrypt_field(&state.vault, encrypted) {
+                    profile.encrypted_password = Some(decrypted);
+                }
+            }
+        }
+        
         connections.push(profile);
     }
     Ok(connections)

@@ -17,6 +17,16 @@ export function ConnectionsPage() {
   const [connectionToDelete, setConnectionToDelete] = useState<ConnectionProfile | null>(null);
 
   const handleConnect = async (conn: ConnectionProfile) => {
+    const hasPassword = conn.auth_method === "password" && conn.encrypted_password;
+    const hasKey = conn.auth_method === "key" && conn.key_id;
+    
+    if (!hasPassword && !hasKey) {
+      toast.warning("Missing credentials", { 
+        description: "Please add a password or SSH key to connect" 
+      });
+      return;
+    }
+    
     try {
       await openSshTerminal({
         host: conn.host,

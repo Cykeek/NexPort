@@ -17,7 +17,8 @@ interface ConnectionDialogProps {
 export function ConnectionDialog({ open, onOpenChange, editConnection, onSuccess }: ConnectionDialogProps) {
   const { keys } = useKeyStore();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [form, setForm] = useState({ name: "", host: "", port: "22", username: "", authMethod: "password", password: "", keyId: "", group: "" });
+  const [form, setForm] = useState({ name: "", host: "", port: "22", username: "", authMethod: "password" as "password" | "key", password: "", keyId: "", group: "" });
+  const [existingPassword, setExistingPassword] = useState<string | null>(null);
 
   useEffect(() => {
     if (editConnection) {
@@ -31,8 +32,10 @@ export function ConnectionDialog({ open, onOpenChange, editConnection, onSuccess
         keyId: editConnection.key_id || "",
         group: editConnection.group || "",
       });
+      setExistingPassword(editConnection.encrypted_password || null);
     } else {
       setForm({ name: "", host: "", port: "22", username: "", authMethod: "password", password: "", keyId: "", group: "" });
+      setExistingPassword(null);
     }
   }, [editConnection, open]);
 
@@ -43,15 +46,18 @@ export function ConnectionDialog({ open, onOpenChange, editConnection, onSuccess
     if (!form.name || !form.host || !form.username) return;
     setIsSubmitting(true);
     try {
+      // Use existing password if new password is empty
+      const finalPassword = form.password || existingPassword;
+      
       const profile: ConnectionProfile = { 
         id: editConnection?.id || crypto.randomUUID(),
         name: form.name, 
         host: form.host, 
         port: parseInt(form.port) || 22, 
         username: form.username, 
-        auth_method: form.authMethod as "password" | "key",
+        auth_method: form.authMethod,
         key_id: form.authMethod === "key" ? form.keyId : undefined,
-        encrypted_password: form.password || undefined,
+        encrypted_password: finalPassword || undefined,
         group: form.group || undefined 
       };
       

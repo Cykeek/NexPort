@@ -5,9 +5,18 @@ use crate::state::AppState;
 use crate::ssh::session::SshSession;
 use crate::error::{AppResult, AppError};
 use crate::commands::connections::ConnectionProfile;
+use crate::crypto::decrypt_field;
+use base64::Engine;
 
 const CONNECTIONS_TABLE: redb::TableDefinition<&str, &str> = redb::TableDefinition::new("connections");
 const KEYS_TABLE: redb::TableDefinition<&str, &str> = redb::TableDefinition::new("keys");
+
+fn decrypt_key_data(vault: &std::sync::Mutex<crate::vault::encryptor::Vault>, encrypted_b64: &str) -> Result<String, AppError> {
+    let encrypted = base64::engine::general_purpose::STANDARD.decode(encrypted_b64).map_err(|e| AppError::Database(e.to_string()))?;
+    let vault = vault.lock().map_err(|e| AppError::Database(e.to_string()))?;
+    let decrypted = vault.decrypt(&encrypted).map_err(|e| AppError::Database(e))?;
+    String::from_utf8(decrypted).map_err(|e| AppError::Database(e.to_string()))
+}
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -32,8 +41,12 @@ pub async fn ssh_connect(
     password: Option<String>,
     key_data: Option<String>,
     connection_id: Option<String>,
+    trust_on_first_use: Option<bool>,
     state: State<'_, AppState>,
 ) -> AppResult<String> {
+    // Default to TOFU for backward compatibility
+    let tofu = trust_on_first_use.unwrap_or(true);
+    
     let (final_password, final_key_data) = if let Some(ref conn_id) = connection_id {
         // Ensure database exists
         let db_guard = match state.get_db() {
@@ -57,7 +70,19 @@ pub async fn ssh_connect(
         let profile: ConnectionProfile = serde_json::from_str(value.value())
             .map_err(|e| AppError::Database(e.to_string()))?;
 
-        let final_password = profile.encrypted_password.clone();
+        // Decrypt password for authentication
+        let final_password = if let Some(ref encrypted) = profile.encrypted_password {
+            if !encrypted.is_empty() {
+                match decrypt_field(&state.vault, encrypted) {
+                    Ok(decrypted) => Some(decrypted),
+                    Err(_) => profile.encrypted_password.clone(),
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         let final_key_data = if let Some(ref key_id) = profile.key_id {
             let keys_table = read_txn.open_table(KEYS_TABLE)
@@ -70,7 +95,13 @@ pub async fn ssh_connect(
             let stored_key: StoredKey = serde_json::from_str(key_value.value())
                 .map_err(|e| AppError::Database(e.to_string()))?;
 
-            let mut key_data = stored_key.encrypted_key_data;
+            // Decrypt the key data
+            let decrypted_key = match decrypt_key_data(&state.vault, &stored_key.encrypted_key_data) {
+                Ok(key) => key,
+                Err(_) => stored_key.encrypted_key_data,
+            };
+            
+            let mut key_data = decrypted_key;
             if !key_data.ends_with('\n') {
                 key_data.push('\n');
             }
@@ -90,6 +121,7 @@ pub async fn ssh_connect(
         &username,
         final_password.as_deref(),
         final_key_data.as_deref(),
+        tofu,
     )
     .await
     .map_err(|e| AppError::SshConnection(e))?;
@@ -109,6 +141,16 @@ pub async fn ssh_disconnect(
         session.disconnect().await.ok();
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn ssh_is_connected(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> AppResult<bool> {
+    // Simple check: just verify session exists in our map
+    // The actual connection health is checked via ssh_read errors
+    Ok(state.sessions.contains_key(&session_id))
 }
 
 #[tauri::command]
@@ -191,7 +233,20 @@ pub async fn ssh_detect_os(
         let host = profile.host.clone();
         let port = profile.port;
         let username = profile.username.clone();
-        let final_password = profile.encrypted_password.clone();
+        
+        // Decrypt password for authentication
+        let final_password = if let Some(ref encrypted) = profile.encrypted_password {
+            if !encrypted.is_empty() {
+                match decrypt_field(&state.vault, encrypted) {
+                    Ok(decrypted) => Some(decrypted),
+                    Err(_) => profile.encrypted_password.clone(),
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         
         let final_key_data = if let Some(ref key_id) = profile.key_id {
             let keys_table = read_txn.open_table(KEYS_TABLE)
@@ -204,7 +259,13 @@ pub async fn ssh_detect_os(
             let stored_key: StoredKey = serde_json::from_str(key_value.value())
                 .map_err(|e| AppError::Database(e.to_string()))?;
             
-            let mut key_data = stored_key.encrypted_key_data;
+            // Decrypt the key data
+            let decrypted_key = match decrypt_key_data(&state.vault, &stored_key.encrypted_key_data) {
+                Ok(key) => key,
+                Err(_) => stored_key.encrypted_key_data,
+            };
+            
+            let mut key_data = decrypted_key;
             if !key_data.ends_with('\n') {
                 key_data.push('\n');
             }
@@ -216,13 +277,14 @@ pub async fn ssh_detect_os(
         (host, port, username, final_password, final_key_data)
     };
     
-    // Create a separate SSH session for detection
+    // Create a separate SSH session for detection (always use TOFU for background detection)
     let session = SshSession::connect(
         &host,
         port,
         &username,
         final_password.as_deref(),
         final_key_data.as_deref(),
+        true, // Always use TOFU for OS detection
     )
     .await
     .map_err(|e| AppError::SshConnection(e))?;
