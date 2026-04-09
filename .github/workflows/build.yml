@@ -42,20 +42,39 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt update
-          sudo apt install -y build-essential libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libssl-dev pkg-config libglib2.0-dev libayatana-appindicator3-dev
+          sudo apt install -y build-essential libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libssl-dev pkg-config libglib2.0-dev libayatana-appindicator3-dev zip
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Get current version
+        id: current_version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
       - name: Sign macOS app (ad-hoc)
         if: matrix.platform == 'macos-latest'
         run: |
           find src-tauri/target/release/bundle/macos -name "*.app" -exec codesign --force --deep --sign - {} \;
+
+      - name: Create ZIP bundles for updater
+        if: matrix.platform == 'windows-latest'
+        run: |
+          cd src-tauri/target/release/bundle
+          for dir in windows/*/; do
+            if [ -d "$dir" ]; then
+              name=$(basename $dir)
+              zip -r "${name}.zip" "$dir"
+            fi
+          done
+          ls -la windows/
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -73,8 +92,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Get version
-        id: version
+      - name: Get current version
+        id: current_version
         run: |
           VERSION=$(node -p "require('./package.json').version")
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
@@ -86,19 +105,38 @@ jobs:
 
       - name: Create latest.json for updater
         run: |
-          VERSION=${{ steps.version.outputs.VERSION }}
+          VERSION=${{ steps.current_version.outputs.VERSION }}
           COMMIT_SHA=${{ github.sha }}
           
-          # Create latest.json with Windows exe
+          # Find Windows installer and signature
+          WIN_DIR=$(find artifacts -type d -name "windows*" | head -1)
+          SIG_FILE=""
+          ZIP_FILE=""
+          
+          if [ -d "$WIN_DIR" ]; then
+            SIG_FILE=$(find "$WIN_DIR" -name "*.sig" | head -1)
+            ZIP_FILE=$(find "$WIN_DIR" -name "*.zip" | head -1)
+          fi
+          
+          SIGNATURE=""
+          if [ -f "$SIG_FILE" ]; then
+            SIGNATURE=$(cat "$SIG_FILE")
+          fi
+          
+          FILENAME=""
+          if [ -f "$ZIP_FILE" ]; then
+            FILENAME=$(basename "$ZIP_FILE")
+          fi
+          
           cat > latest.json << EOF
           {
-            "version": "$VERSION-dev.$COMMIT_SHA",
-            "notes": "Dev build",
+            "version": "$VERSION",
+            "notes": "Version $VERSION - Auto-update from dev branch",
             "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "platforms": {
               "windows-x86_64": {
-                "signature": "",
-                "url": "https://github.com/Cykeek/NexPort/releases/download/dev-$COMMIT_SHA/NexPort_${VERSION}_x64-setup.exe"
+                "signature": "$SIGNATURE",
+                "url": "https://github.com/Cykeek/NexPort/releases/download/dev-$COMMIT_SHA/$FILENAME"
               }
             }
           }
@@ -106,16 +144,26 @@ jobs:
           cat latest.json
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: dev-${{ github.sha }}
-          name: NexPort Dev Build
+          name: NexPort Dev Build v${{ steps.current_version.outputs.VERSION }}
           draft: false
           prerelease: true
           files: |
-            artifacts/nexport-windows-*/**/*
+            latest.json
+            artifacts/nexport-windows-*/**/*.zip
+            artifacts/nexport-windows-*/**/*.exe
             artifacts/nexport-linux-*/**/*
             artifacts/nexport-macos-*/**/*
-            latest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit version bump
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add package.json src-tauri/tauri.conf.json
+          git diff --cached --quiet && exit 0
+          git commit -m "chore: bump version to ${{ steps.current_version.outputs.VERSION }}"
+          git push

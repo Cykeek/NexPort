@@ -27,6 +27,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -40,7 +41,7 @@
       "endpoints": [
         "https://github.com/Cykeek/NexPort/releases/latest/download/latest.json"
       ],
-      "pubkey": ""
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNEMUU0NDQxRDNENUQ2RkEKUldUNjF0WFRRVVFlUGZXZEtuSFdpSjBvUzRaU1p1cktISm15ZVlKZEI5eXVwaXhSZGdwb3JReWYK"
     }
   }
 }
