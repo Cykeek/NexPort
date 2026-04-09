@@ -69,13 +69,13 @@ jobs:
         if: matrix.platform == 'windows-latest'
         run: |
           cd src-tauri/target/release/bundle
-          for dir in windows/*/; do
-            if [ -d "$dir" ]; then
-              name=$(basename $dir)
+          for dir in */*/; do
+            if [ -d "$dir" ] && [[ "$dir" == *"x64"* ]] && [[ "$dir" == *"nexport"* ]]; then
+              name=$(echo "$dir" | tr '/' '-' | tr '\\' '-')
               zip -r "${name}.zip" "$dir"
             fi
           done
-          ls -la windows/
+          ls -la
         shell: bash
 
       - name: Upload build artifacts
