@@ -1,6 +1,6 @@
 import { Zap, Pencil, Trash2, Terminal } from "lucide-react";
 import { ConnectionProfile } from "@/types/connection";
-import { HostStatus } from "@/lib/connection-manager";
+import type { HostStatus } from "@/stores/connection-store";
 import { OSIcon } from "@/lib/os-icons";
 
 interface ConnectionCardProps {

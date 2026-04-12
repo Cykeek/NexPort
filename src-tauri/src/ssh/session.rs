@@ -90,7 +90,7 @@ pub struct SshSession {
     pub username: String,
 }
 
-fn get_known_hosts_path() -> PathBuf {
+pub(crate) fn get_known_hosts_path() -> PathBuf {
     let data_dir = dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("ssh-connect");
@@ -241,23 +241,6 @@ impl SshSession {
         }
         
         Ok(output)
-    }
-
-    pub async fn create_sftp(&self) -> Result<russh_sftp::client::SftpSession, String> {
-        let handle = self.handle.as_ref().ok_or("No SSH session handle")?;
-        let channel = handle
-            .channel_open_session()
-            .await
-            .map_err(|e| e.to_string())?;
-
-        channel
-            .request_subsystem(true, "sftp")
-            .await
-            .map_err(|e| e.to_string())?;
-
-        russh_sftp::client::SftpSession::new(channel.into_stream())
-            .await
-            .map_err(|e| e.to_string())
     }
 
     pub async fn disconnect(&mut self) -> Result<(), String> {

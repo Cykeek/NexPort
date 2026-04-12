@@ -77,7 +77,73 @@ pub fn check_known_hosts_path(
     Ok(false)
 }
 
-#[allow(dead_code)]
+/// Represents a single known host entry for frontend display.
+#[derive(serde::Serialize, Clone)]
+pub struct KnownHostEntry {
+    pub host: String,
+    pub port: u16,
+    pub key_type: String,
+    pub fingerprint: String,
+}
+
+/// Parse all entries from the known_hosts file for display.
+pub fn list_known_hosts_path(path: &Path) -> Result<Vec<KnownHostEntry>, String> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let file =
+        std::fs::File::open(path).map_err(|e| format!("Failed to open known_hosts file: {}", e))?;
+    let reader = BufReader::new(file);
+    let mut entries = Vec::new();
+
+    for line in reader.lines() {
+        let line = line.map_err(|e| format!("Failed to read line: {}", e))?;
+        let line = line.trim();
+
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let parts: Vec<&str> = line.splitn(3, ' ').collect();
+        if parts.len() < 3 {
+            continue;
+        }
+
+        let raw_host = parts[0];
+        let key_type = parts[1].to_string();
+        let key_data = parts[2];
+
+        // Parse the "[host]:port" format back to components.
+        let (host, port) = if raw_host.starts_with('[') {
+            if let Some(close_bracket) = raw_host.find(']') {
+                let host_part = &raw_host[1..close_bracket];
+                let port_part = &raw_host[close_bracket + 2..]; // skip "]: "
+                let port = port_part.parse::<u16>().unwrap_or(22);
+                (host_part.to_string(), port)
+            } else {
+                (raw_host.to_string(), 22)
+            }
+        } else {
+            (raw_host.to_string(), 22)
+        };
+
+        // Reconstruct a public key to compute the fingerprint.
+        let openssh_line = format!("{} {}", key_type, key_data);
+        if let Ok(pubkey) = ssh_key::PublicKey::from_openssh(&openssh_line) {
+            let fingerprint = pubkey.fingerprint(Default::default()).to_string();
+            entries.push(KnownHostEntry {
+                host,
+                port,
+                key_type,
+                fingerprint,
+            });
+        }
+    }
+
+    Ok(entries)
+}
+
 #[allow(dead_code)]
 pub fn learn_known_hosts_path(
     host: &str,

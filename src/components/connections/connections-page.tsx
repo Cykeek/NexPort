@@ -17,7 +17,7 @@ export function ConnectionsPage() {
   const [connectionToDelete, setConnectionToDelete] = useState<ConnectionProfile | null>(null);
 
   const handleConnect = async (conn: ConnectionProfile) => {
-    const hasPassword = conn.auth_method === "password" && conn.encrypted_password;
+    const hasPassword = conn.auth_method === "password" && conn.has_password;
     const hasKey = conn.auth_method === "key" && conn.key_id;
     
     if (!hasPassword && !hasKey) {
@@ -28,13 +28,15 @@ export function ConnectionsPage() {
     }
     
     try {
-      await openSshTerminal({
+      const opened = await openSshTerminal({
         host: conn.host,
         port: conn.port,
         username: conn.username,
         connectionId: conn.id,
       });
-      toast.success("Connecting...", { description: conn.name });
+      if (opened) {
+        toast.success("Connecting...", { description: conn.name });
+      }
     } catch (e) {
       toast.error("Failed to connect", { description: String(e) });
     }

@@ -6,10 +6,9 @@ use crate::error::{AppResult, AppError};
 use crate::crypto::{encrypt_key_data, decrypt_key_data};
 use ssh_key::{LineEnding, PrivateKey as SshPrivateKey};
 use russh_keys::{PrivateKey, PublicKey};
-use base64::Engine;
+use zeroize::Zeroize;
 use rand::thread_rng;
 use russh_keys::Algorithm as RusshAlgorithm;
-use ed25519_dalek::SigningKey;
 
 const KEYS_TABLE: TableDefinition<&str, &str> = TableDefinition::new("keys");
 
@@ -61,64 +60,51 @@ fn save_key_to_db(state: &State<'_, AppState>, id: &str, stored_key: &StoredKey)
     Ok(())
 }
 
-// SIMPLE key parser - finds ssh-ed25519 and extracts raw key material
+// Parse an OpenSSH-format private key of any supported type
+// (ed25519, RSA, ECDSA). Delegates to the `ssh_key` crate instead
+// of fragile byte-offset manipulation.
 fn parse_private_key(raw: &str) -> Result<PrivateKey, String> {
-    let normalized = raw.replace("\r\n", "\n").replace("\r", "\n");
-    if normalized.is_empty() { return Err("Empty key data".to_string()); }
-    if !normalized.contains("-----BEGIN OPENSSH") { return Err("Invalid key format".to_string()); }
-    
-    let base64_content: String = normalized.lines().filter(|l| !l.starts_with("-----")).collect::<Vec<_>>().join("");
-    let decoded = base64::engine::general_purpose::STANDARD.decode(&base64_content).map_err(|e| format!("Base64: {}", e))?;
-    
-    // Find "ssh-ed25519" in the data
-    let keytype = b"ssh-ed25519";
-    let pos = decoded.windows(11).position(|w| w == keytype).ok_or("Key type not found")?;
-    
-    // After keytype: 4 bytes len + 32 bytes public key
-    let pubkey_start = pos + 11 + 4;
-    let _pubkey_bytes: [u8; 32] = decoded[pubkey_start..pubkey_start+32].try_into().map_err(|_| "Bad pubkey")?;
-    
-    // Private key section: 8 bytes check + 4 bytes len + keytype(11) + 64 bytes private
-    let priv_start = pubkey_start + 32 + 8 + 4 + 11;
-    let privkey: [u8; 64] = decoded[priv_start..priv_start+64].try_into().map_err(|_| "Bad privkey")?;
-    
-    // Create Ed25519 key using ssh_key crate
-    let secret: [u8; 32] = privkey[..32].try_into().map_err(|_| "Bad secret")?;
-    let signing_key = SigningKey::from_bytes(&secret);
-    let verifying_key = signing_key.verifying_key();
-    
-    use ssh_key::private::{Ed25519Keypair, Ed25519PrivateKey};
-    use ssh_key::public::Ed25519PublicKey;
-    let keypair = Ed25519Keypair {
-        public: Ed25519PublicKey(verifying_key.to_bytes()),
-        private: Ed25519PrivateKey::from_bytes(&secret),
-    };
-    
-    let key_data = ssh_key::private::KeypairData::Ed25519(keypair);
-    
-    let ssh_key = SshPrivateKey::new(key_data, "").map_err(|e| format!("ssh_key error: {}", e))?;
-    
-    // Convert to russh_keys PrivateKey using from_openssh
-    let openssh = ssh_key.to_openssh(LineEnding::LF).map_err(|e| format!("to_openssh: {}", e))?;
-    let private_key = PrivateKey::from_openssh(openssh.as_bytes()).map_err(|e| format!("from_openssh: {}", e))?;
-    
-    Ok(private_key)
+    let normalized = raw.trim().replace("\r\n", "\n").replace("\r", "\n");
+    if normalized.is_empty() {
+        return Err("Empty key data".to_string());
+    }
+
+    // Use the ssh_key crate's native parser — supports all key types.
+    let ssh_privkey = SshPrivateKey::from_openssh(&normalized)
+        .map_err(|e| format!("Failed to parse key: {}", e))?;
+
+    // Convert to russh_keys PrivateKey via OpenSSH serialization.
+    let openssh = ssh_privkey.to_openssh(LineEnding::LF)
+        .map_err(|e| format!("Failed to serialize key: {}", e))?;
+
+    PrivateKey::from_openssh(openssh.as_bytes())
+        .map_err(|e| format!("Failed to load key into SSH library: {}", e))
 }
 
 #[tauri::command]
 pub async fn generate_key(name: String, key_type: String, _passphrase: Option<String>, state: State<'_, AppState>) -> AppResult<KeyInfo> {
-    let private_key = match key_type.as_str() {
-        "ed25519" => PrivateKey::random(&mut thread_rng(), RusshAlgorithm::Ed25519).map_err(|e| AppError::Key(format!("Gen error: {}", e)))?,
-        "rsa" => PrivateKey::random(&mut thread_rng(), RusshAlgorithm::Rsa { hash: None }).map_err(|e| AppError::Key(format!("Gen error: {}", e)))?,
-        _ => return Err(AppError::Key("Unsupported".to_string())),
+    // RSA key generation is CPU-bound and can take several seconds.
+    // Offload to a blocking thread to avoid starving the async runtime.
+    let algorithm = match key_type.as_str() {
+        "ed25519" => RusshAlgorithm::Ed25519,
+        "rsa" => RusshAlgorithm::Rsa { hash: None },
+        _ => return Err(AppError::Key("Unsupported key type".to_string())),
     };
+
+    let private_key: PrivateKey = tokio::task::spawn_blocking(move || {
+        PrivateKey::random(&mut thread_rng(), algorithm)
+    })
+    .await
+    .map_err(|e| AppError::Key(format!("Task panic: {}", e)))
+    .and_then(|r| r.map_err(|e| AppError::Key(format!("Gen error: {}", e))))?;
+
     let public_key = private_key.public_key();
     let fingerprint = public_key.fingerprint(Default::default()).to_string();
     let key_data = private_key.to_openssh(LineEnding::LF).map_err(|e| AppError::Key(format!("Ser: {}", e)))?.to_string();
-    
+
     // Encrypt the private key before storing
     let encrypted_key_data = encrypt_key_data(&state.vault, &key_data)?;
-    
+
     let id = format!("key_{}", uuid::Uuid::new_v4());
     save_key_to_db(&state, &id, &StoredKey { id: id.clone(), name: name.clone(), key_type: key_type.clone(), fingerprint: fingerprint.clone(), encrypted_key_data })?;
     Ok(KeyInfo { id, name, key_type, fingerprint })
@@ -250,15 +236,27 @@ pub async fn update_key_with_new_key(id: String, name: String, key_data: String,
 pub async fn get_key_data(id: String, state: State<'_, AppState>) -> AppResult<KeyData> {
     let db_guard = state.get_db().map_err(|e| AppError::Database(e.to_string()))?;
     let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
-    
+
     let read_txn = db.begin_read().map_err(|e| AppError::Database(e.to_string()))?;
     let table = read_txn.open_table(KEYS_TABLE).map_err(|e| AppError::Database(e.to_string()))?;
     let value = table.get(id.as_str()).map_err(|e| AppError::Database(e.to_string()))?.ok_or_else(|| AppError::Key("Not found".to_string()))?;
     let stored_key: StoredKey = serde_json::from_str(value.value()).map_err(|e| AppError::Database(e.to_string()))?;
-    
+
     // Decrypt the private key
-    let private_key = decrypt_key_data(&state.vault, &stored_key.encrypted_key_data)?;
+    let mut private_key = decrypt_key_data(&state.vault, &stored_key.encrypted_key_data)?;
     let parsed = parse_private_key(&private_key).map_err(AppError::Key)?;
     let public_key = parsed.public_key().to_openssh().map_err(|e| AppError::Key(format!("Ser: {}", e)))?.to_string();
-    Ok(KeyData { id: stored_key.id, name: stored_key.name, key_type: stored_key.key_type, fingerprint: stored_key.fingerprint, public_key, private_key })
+
+    // Clone for the result, then zero the original decrypted buffer.
+    let private_key_for_result = private_key.clone();
+    private_key.zeroize();
+
+    Ok(KeyData {
+        id: stored_key.id,
+        name: stored_key.name,
+        key_type: stored_key.key_type,
+        fingerprint: stored_key.fingerprint,
+        public_key,
+        private_key: private_key_for_result,
+    })
 }

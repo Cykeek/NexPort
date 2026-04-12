@@ -39,3 +39,6 @@ next-env.d.ts
 .kilocode/
 .opencode/
 .kilo/
+
+# Qwen
+.qwen/

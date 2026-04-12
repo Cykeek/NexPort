@@ -5,9 +5,10 @@ export interface ConnectionProfile {
   port: number;
   username: string;
   auth_method: "password" | "key";
-  encrypted_password?: string;
   key_id?: string;
   group?: string;
   status?: "online" | "offline" | "unknown";
   detected_os?: string;
+  /** True if a password is stored for this connection (backend-encrypted indicator). */
+  has_password?: boolean;
 }

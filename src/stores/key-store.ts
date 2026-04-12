@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { invoke } from "@tauri-apps/api/core";
+import { keyApi } from "@/lib/tauri-api";
 
 export interface KeyInfo {
   id: string;
@@ -36,7 +36,7 @@ export const useKeyStore = create<KeyStoreState>()((set, get) => ({
   loadKeys: async () => {
     set({ isLoading: true });
     try {
-      const keys = await invoke<KeyInfo[]>("list_keys");
+      const keys = await keyApi.list();
       set({ keys, isLoading: false });
     } catch (error) {
       console.error("Failed to load keys:", error);
@@ -45,34 +45,34 @@ export const useKeyStore = create<KeyStoreState>()((set, get) => ({
   },
 
   saveKey: async (name, keyType, passphrase) => {
-    const keyInfo = await invoke<KeyInfo>("generate_key", { name, keyType, passphrase });
+    const keyInfo = await keyApi.generate(name, keyType, passphrase);
     set((state) => ({
       keys: [...state.keys, keyInfo],
     }));
   },
 
   importKey: async (name, keyData) => {
-    const keyInfo = await invoke<KeyInfo>("import_key", { name, keyData });
+    const keyInfo = await keyApi.import(name, keyData);
     set((state) => ({
       keys: [...state.keys, keyInfo],
     }));
   },
 
   updateKey: async (id, name) => {
-    await invoke("update_key", { id, name });
+    await keyApi.updateName(id, name);
     set((state) => ({
       keys: state.keys.map((k) => (k.id === id ? { ...k, name } : k)),
     }));
   },
 
   updateKeyWithNewKey: async (id, name, newKeyData) => {
-    await invoke("update_key_with_new_key", { id, name, keyData: newKeyData });
-    const keys = await invoke<KeyInfo[]>("list_keys");
+    await keyApi.updateKeyData(id, name, newKeyData);
+    const keys = await keyApi.list();
     set({ keys });
   },
 
   deleteKey: async (id) => {
-    await invoke("delete_key", { id });
+    await keyApi.delete(id);
     set((state) => ({
       keys: state.keys.filter((k) => k.id !== id),
     }));
@@ -80,7 +80,7 @@ export const useKeyStore = create<KeyStoreState>()((set, get) => ({
 
   getKeyData: async (id) => {
     try {
-      const keyData = await invoke<KeyData>("get_key_data", { id });
+      const keyData = await keyApi.getData(id);
       return keyData;
     } catch (error) {
       console.error("Failed to get key data:", error);

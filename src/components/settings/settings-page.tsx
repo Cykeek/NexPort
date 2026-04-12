@@ -80,7 +80,7 @@ export function SettingsPage() {
         </h2>
 
         <div style={{ marginBottom: "16px", color: "var(--text-secondary)", fontSize: "14px" }}>
-          Current Version: <span style={{ fontWeight: 500 }}>0.1.0-alpha</span>
+          Current Version: <span style={{ fontWeight: 500 }}>0.2.0-alpha</span>
         </div>
 
         {checking ? (
@@ -200,16 +200,6 @@ export function SettingsPage() {
           </button>
         )}
       </div>
-
-      <style>{`
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        .animate-spin {
-          animation: spin 1s linear infinite;
-        }
-      `}</style>
     </div>
   );
 }

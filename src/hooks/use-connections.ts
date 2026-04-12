@@ -1,94 +1,61 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { ConnectionProfile } from "@/types/connection";
-import { loadConnections, deleteConnection, checkHostStatus, HostStatus } from "@/lib/connection-manager";
+/**
+ * Thin wrapper around the Zustand connection store that provides
+ * a React-friendly API with computed filtered results and auto-starts polling.
+ */
+import { useEffect, useMemo } from "react";
+import {
+  useConnectionStore,
+  getFilteredConnections,
+  ConnectionState,
+} from "@/stores/connection-store";
 
 interface UseConnectionsReturn {
-  connections: ConnectionProfile[];
-  statuses: Record<string, HostStatus>;
-  isLoading: boolean;
-  search: string;
-  setSearch: (value: string) => void;
-  filtered: ConnectionProfile[];
+  connections: ConnectionState["connections"];
+  statuses: ConnectionState["statuses"];
+  isLoading: ConnectionState["isLoading"];
+  search: ConnectionState["search"];
+  setSearch: ConnectionState["setSearch"];
+  filtered: ReturnType<typeof getFilteredConnections>;
   refresh: () => Promise<void>;
   remove: (id: string) => Promise<void>;
 }
 
 export function useConnections(): UseConnectionsReturn {
-  const [connections, setConnections] = useState<ConnectionProfile[]>([]);
-  const [statuses, setStatuses] = useState<Record<string, HostStatus>>({});
-  const [isLoading, setIsLoading] = useState(false);
-  const [search, setSearch] = useState("");
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const connections = useConnectionStore((s) => s.connections);
+  const statuses = useConnectionStore((s) => s.statuses);
+  const isLoading = useConnectionStore((s) => s.isLoading);
+  const search = useConnectionStore((s) => s.search);
+  const setSearch = useConnectionStore((s) => s.setSearch);
+  const loadConnections = useConnectionStore((s) => s.loadConnections);
+  const deleteConnection = useConnectionStore((s) => s.deleteConnection);
+  const startPolling = useConnectionStore((s) => s.startPolling);
+  const stopPolling = useConnectionStore((s) => s.stopPolling);
 
-  const refresh = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const data = await loadConnections();
-      setConnections(data);
-    } catch (error) {
-      console.error("Failed to load connections:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  const checkStatuses = useCallback(async () => {
-    if (connections.length === 0) return;
-    
-    const newStatuses: Record<string, HostStatus> = {};
-    await Promise.all(
-      connections.map(async (conn) => {
-        try {
-          const status = await checkHostStatus(conn.host, conn.port);
-          newStatuses[conn.id] = status;
-        } catch {
-          newStatuses[conn.id] = "unknown";
-        }
-      })
-    );
-    setStatuses(newStatuses);
-  }, [connections]);
-
+  // Load connections on mount.
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    loadConnections();
+  }, [loadConnections]);
 
-  useEffect(() => {
-    const handleRefresh = () => refresh();
-    window.addEventListener("refresh-connections", handleRefresh);
-    return () => window.removeEventListener("refresh-connections", handleRefresh);
-  }, [refresh]);
-
+  // Start/stop polling based on whether there are connections.
   useEffect(() => {
     if (connections.length > 0) {
-      checkStatuses();
-      
-      intervalRef.current = setInterval(() => {
-        checkStatuses();
-      }, 10000);
+      startPolling();
+    } else {
+      stopPolling();
     }
-    
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, [connections.length, checkStatuses]);
+    return () => stopPolling();
+  }, [connections.length, startPolling, stopPolling]);
 
-  const remove = useCallback(async (id: string) => {
-    await deleteConnection(id);
-    setConnections((prev) => prev.filter((c) => c.id !== id));
-    setStatuses((prev) => {
-      const newStatuses = { ...prev };
-      delete newStatuses[id];
-      return newStatuses;
-    });
-  }, []);
+  // Listen for manual refresh events (e.g. after OS detection).
+  useEffect(() => {
+    const handleRefresh = () => loadConnections();
+    window.addEventListener("refresh-connections", handleRefresh);
+    return () => window.removeEventListener("refresh-connections", handleRefresh);
+  }, [loadConnections]);
 
-  const filtered = connections.filter(
-    (c) =>
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.host.toLowerCase().includes(search.toLowerCase())
+  const filtered = useMemo(
+    () => getFilteredConnections(connections, search),
+    [connections, search]
   );
 
   return {
@@ -98,7 +65,7 @@ export function useConnections(): UseConnectionsReturn {
     search,
     setSearch,
     filtered,
-    refresh,
-    remove,
+    refresh: loadConnections,
+    remove: deleteConnection,
   };
 }

@@ -7,36 +7,14 @@ mod vault;
 
 use state::AppState;
 use tauri::Manager;
-use std::panic;
-use std::fs::OpenOptions;
-use std::io::Write;
-use std::path::PathBuf;
-
-fn write_panic_log(msg: &str) {
-    // Try to write to app directory or current dir
-    let log_paths = [
-        PathBuf::from("nexport_crash.log"),
-        PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_default()).join("nexport_crash.log"),
-    ];
-    for log_path in &log_paths {
-        if let Ok(mut file) = OpenOptions::new().create(true).write(true).open(log_path) {
-            let _ = file.write_all(msg.as_bytes());
-            break;
-        }
-    }
-    eprintln!("{}", msg);
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Set panic hook BEFORE tauri starts - this captures ANY crash
-    panic::set_hook(Box::new(|panic_info| {
-        let msg = format!("[{}] PANIC: {:?}\n", 
-            chrono::Local::now().format("%Y-%m-%d %H:%M:%S"), 
-            panic_info
-        );
-        write_panic_log(&msg);
-    }));
+    // Use Tauri's built-in logging via tauri-plugin-log.
+    // We intentionally do NOT write panic logs to disk — crash dumps can
+    // contain sensitive data (passwords, keys, hostnames) and should not
+    // be persisted in plaintext. Panics are reported to stderr and captured
+    // by the OS crash reporter instead.
 
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())
@@ -50,22 +28,19 @@ pub fn run() {
             let data_dir = match app.path().app_data_dir() {
                 Ok(d) => d,
                 Err(e) => {
-                    let msg = format!("Failed to get app data directory: {}", e);
-                    write_panic_log(&msg);
+                    log::error!("Failed to get app data directory: {}", e);
                     return Err(e.into());
                 }
             };
-            
+
             // Create data directory if it doesn't exist
             if let Err(e) = std::fs::create_dir_all(&data_dir) {
-                let msg = format!("Failed to create app data directory: {}", e);
-                write_panic_log(&msg);
+                log::error!("Failed to create app data directory: {}", e);
             }
-            
-            // Create empty state (database will be initialized on first save)
+
             let db_path = data_dir.join("connections.redb");
-            let app_state = AppState::new_empty(db_path, data_dir);
-            
+            let app_state = AppState::new(db_path);
+
             app.manage(app_state);
             Ok(())
         })
@@ -77,12 +52,7 @@ pub fn run() {
             commands::ssh::ssh_write,
             commands::ssh::ssh_read,
             commands::ssh::ssh_detect_os,
-            commands::sftp::sftp_list_dir,
-            commands::sftp::sftp_read_file,
-            commands::sftp::sftp_write_file,
-            commands::sftp::sftp_delete,
-            commands::sftp::sftp_mkdir,
-            commands::sftp::sftp_rename,
+            commands::ssh::list_known_hosts,
             commands::connections::save_connection,
             commands::connections::get_connections,
             commands::connections::delete_connection,
@@ -98,8 +68,7 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {
-            let msg = format!("Failed to run Tauri application: {}", e);
-            write_panic_log(&msg);
-            eprintln!("{}", msg);
+            log::error!("Failed to run Tauri application: {}", e);
+            eprintln!("Failed to run Tauri application: {}", e);
         });
 }

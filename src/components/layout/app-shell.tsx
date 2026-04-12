@@ -10,6 +10,7 @@ import { ConnectionsPage } from "@/components/connections/connections-page";
 import { KeyManager } from "@/components/keys/key-manager";
 import { SettingsPage } from "@/components/settings/settings-page";
 import { useWindowControls } from "@/hooks/use-window-controls";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 
 export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -45,9 +46,11 @@ export function AppShell() {
           onNavChange={setActivePage}
         />
         <ContentArea>
-          {activePage === "connections" && <ConnectionsPage />}
-          {activePage === "keys" && <KeyManager />}
-          {activePage === "settings" && <SettingsPage />}
+          <ErrorBoundary>
+            {activePage === "connections" && <ConnectionsPage />}
+            {activePage === "keys" && <KeyManager />}
+            {activePage === "settings" && <SettingsPage />}
+          </ErrorBoundary>
         </ContentArea>
       </div>
 

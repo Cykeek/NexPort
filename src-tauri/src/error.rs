@@ -9,8 +9,6 @@ pub enum AppError {
     SshAuth(String),
     #[error("Session not found: {0}")]
     SessionNotFound(String),
-    #[error("SFTP error: {0}")]
-    Sftp(String),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("Database error: {0}")]

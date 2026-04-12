@@ -1,14 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { SearchAddon } from "@xterm/addon-search";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import "@xterm/xterm/css/xterm.css";
 import { X, Plus, Minus, Square } from "lucide-react";
 import { useWindowControls } from "@/hooks/use-window-controls";
+import {
+  TERMINAL_CONFIG,
+  TERMINAL_THEME,
+  SSH_DEFAULTS,
+} from "@/config/constants";
+import { sshApi, connectionApi } from "@/lib/tauri-api";
 
 interface TerminalTab {
   id: string;
@@ -28,10 +32,23 @@ interface InitParams {
   connectionId?: string;
 }
 
+/** Progress steps shown during the SSH connection handshake. */
+const CONNECT_STEPS = [
+  { label: "Resolving host", detail: "Looking up the remote server" },
+  { label: "Establishing connection", detail: "TCP handshake" },
+  { label: "Negotiating protocol", detail: "SSH key exchange" },
+  { label: "Authenticating", detail: "Verifying credentials" },
+  { label: "Opening shell", detail: "Allocating PTY" },
+  { label: "Ready", detail: "Connecting terminal…" },
+] as const;
+
 export default function TerminalPage() {
   const [tabs, setTabs] = useState<TerminalTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [initParams, setInitParams] = useState<InitParams | null>(null);
+  const [connecting, setConnecting] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
+  const [connectStep, setConnectStep] = useState(0);
   const terminalsRef = useRef<Map<string, XTerm>>(new Map());
   const fitAddonsRef = useRef<Map<string, FitAddon>>(new Map());
   const pollingRef = useRef<Set<string>>(new Set());
@@ -54,8 +71,20 @@ export default function TerminalPage() {
   }, [initParams]);
 
   const createTerminal = async (host: string, port: number, username: string, connectionId?: string): Promise<TerminalTab | null> => {
+    setConnecting(true);
+    setConnectError(null);
+    setConnectStep(0);
+
+    // Animate through progress steps at a natural pace.
+    const stepTimer = setInterval(() => {
+      setConnectStep(prev => {
+        if (prev >= CONNECT_STEPS.length - 1) return prev;
+        return prev + 1;
+      });
+    }, 600);
+
     try {
-      const sessionId = await invoke<string>("ssh_connect", {
+      const sessionId = await sshApi.connect({
         sessionId: crypto.randomUUID(),
         host,
         port,
@@ -66,11 +95,11 @@ export default function TerminalPage() {
       });
 
       if (connectionId) {
-        invoke<string>("ssh_detect_os", { connectionId })
+        sshApi.detectOs(connectionId)
           .then((os) => {
             console.log("Detected OS:", os);
             if (os && os !== "unknown") {
-              invoke("update_connection_os", { id: connectionId, os })
+              connectionApi.updateOs(connectionId, os)
                 .then(() => {
                   window.dispatchEvent(new CustomEvent("refresh-connections"));
                 });
@@ -94,7 +123,11 @@ export default function TerminalPage() {
       return tab;
     } catch (e) {
       console.error("Failed to connect:", e);
+      setConnectError(String(e));
       return null;
+    } finally {
+      clearInterval(stepTimer);
+      setConnecting(false);
     }
   };
 
@@ -122,25 +155,36 @@ export default function TerminalPage() {
 
     const term = new XTerm({
       cursorBlink: true,
-      fontSize: 14,
-      fontFamily: '"Fira Code", "Consolas", monospace',
+      fontSize: TERMINAL_CONFIG.fontSize,
+      fontFamily: TERMINAL_CONFIG.fontFamily,
       theme: {
-        background: "#08080d",
-        foreground: "#c4c6d0",
-        cursor: "#c4c6d0",
-        selectionBackground: "#33467c",
-        black: "#1e1e2e", red: "#f38ba8", green: "#a6e3a1", yellow: "#f9e2af",
-        blue: "#89b4fa", magenta: "#f5c2e7", cyan: "#94e2d5", white: "#cdd6f4",
-        brightBlack: "#585b70", brightRed: "#f38ba8", brightGreen: "#a6e3a1", brightYellow: "#f9e2af",
-        brightBlue: "#89b4fa", brightMagenta: "#f5c2e7", brightCyan: "#94e2d5", brightWhite: "#ffffff",
+        background: TERMINAL_THEME.background,
+        foreground: TERMINAL_THEME.foreground,
+        cursor: TERMINAL_THEME.cursor,
+        selectionBackground: TERMINAL_THEME.selectionBackground,
+        black: TERMINAL_THEME.black,
+        red: TERMINAL_THEME.red,
+        green: TERMINAL_THEME.green,
+        yellow: TERMINAL_THEME.yellow,
+        blue: TERMINAL_THEME.blue,
+        magenta: TERMINAL_THEME.magenta,
+        cyan: TERMINAL_THEME.cyan,
+        white: TERMINAL_THEME.white,
+        brightBlack: TERMINAL_THEME.brightBlack,
+        brightRed: TERMINAL_THEME.brightRed,
+        brightGreen: TERMINAL_THEME.brightGreen,
+        brightYellow: TERMINAL_THEME.brightYellow,
+        brightBlue: TERMINAL_THEME.brightBlue,
+        brightMagenta: TERMINAL_THEME.brightMagenta,
+        brightCyan: TERMINAL_THEME.brightCyan,
+        brightWhite: TERMINAL_THEME.brightWhite,
       },
-      scrollback: 10000,
+      scrollback: TERMINAL_CONFIG.scrollback,
       allowProposedApi: true,
     });
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
-    term.loadAddon(new SearchAddon());
     term.loadAddon(new Unicode11Addon());
     term.open(container);
     term.unicode.activeVersion = "11";
@@ -152,7 +196,7 @@ export default function TerminalPage() {
 
     term.onData(async (data) => {
       try {
-        await invoke("ssh_write", { sessionId: tab.sessionId, data });
+        await sshApi.write(tab.sessionId, data);
       } catch (e) {
         console.error("Write error:", e);
       }
@@ -169,10 +213,7 @@ export default function TerminalPage() {
       
       try {
         // Try to read data
-        const data = await invoke<string>("ssh_read", { 
-          sessionId: tab.sessionId, 
-          timeoutMs: 100 
-        });
+        const data = await sshApi.read(tab.sessionId, TERMINAL_CONFIG.pollTimeoutMs);
         
         // Check for EOF signal from backend
         if (data === "__EOF__") {
@@ -208,33 +249,11 @@ export default function TerminalPage() {
       
       // Continue polling
       if (pollingRef.current.has(tab.sessionId)) {
-        setTimeout(poll, 50);
+        setTimeout(poll, TERMINAL_CONFIG.pollIntervalMs);
       }
     };
     poll();
   }, [winClose, activeTabId]);
-
-  const pollOutput = useCallback(async (tabId: string, sessionId: string) => {
-    if (!pollingRef.current.has(sessionId)) {
-      return;
-    }
-
-    try {
-      const data = await invoke<string>("ssh_read", { sessionId, timeoutMs: 50 });
-      if (data) {
-        const term = terminalsRef.current.get(tabId);
-        if (term) {
-          term.write(data);
-        }
-      }
-    } catch (e) {
-      console.error("Poll error:", e);
-    }
-
-    if (pollingRef.current.has(sessionId)) {
-      setTimeout(() => pollOutput(tabId, sessionId), 30);
-    }
-  }, []);
 
   useEffect(() => {
     if (tabs.length > 0 && activeTabId) {
@@ -258,13 +277,30 @@ export default function TerminalPage() {
         if (tab) {
           const dims = fitAddon.proposeDimensions();
           if (dims && dims.cols && dims.rows) {
-            invoke("ssh_resize", { sessionId: tab.sessionId, cols: dims.cols, rows: dims.rows }).catch(() => {});
+            sshApi.resize(tab.sessionId, dims.cols, dims.rows).catch(() => {});
           }
         }
       });
     };
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
+  }, [tabs]);
+
+  // Ensure SSH sessions are cleaned up when the window is closed externally
+  // (e.g. main window closes all terminal windows on exit).
+  useEffect(() => {
+    const onBeforeUnload = () => {
+      pollingRef.current.clear();
+      tabs.forEach(tab => {
+        sshApi.disconnect(tab.sessionId).catch(() => {});
+        const term = terminalsRef.current.get(tab.id);
+        if (term) term.dispose();
+      });
+      terminalsRef.current.clear();
+      fitAddonsRef.current.clear();
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [tabs]);
 
   const handleTabClick = (tabId: string) => {
@@ -282,7 +318,7 @@ export default function TerminalPage() {
     if (tab) {
       pollingRef.current.delete(tab.sessionId);
       try {
-        await invoke("ssh_disconnect", { sessionId: tab.sessionId });
+        await sshApi.disconnect(tab.sessionId);
       } catch {}
     }
 
@@ -302,12 +338,19 @@ export default function TerminalPage() {
   };
 
   const handleClose = async () => {
+    // Stop all polling immediately to prevent stale reads.
     pollingRef.current.clear();
-    for (const tab of tabs) {
-      try {
-        await invoke("ssh_disconnect", { sessionId: tab.sessionId });
-      } catch {}
-    }
+
+    // Disconnect all SSH sessions in parallel for faster close.
+    await Promise.allSettled(
+      tabs.map(tab => sshApi.disconnect(tab.sessionId))
+    );
+
+    // Dispose all XTerm instances to free resources and stop any pending writes.
+    terminalsRef.current.forEach(term => term.dispose());
+    terminalsRef.current.clear();
+    fitAddonsRef.current.clear();
+
     await winClose();
   };
 
@@ -433,6 +476,165 @@ export default function TerminalPage() {
             }}
           />
         ))}
+
+        {/* Connecting progress overlay */}
+        {connecting && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "#08080d",
+              gap: "20px",
+              color: "#c4c6d0",
+              zIndex: 10,
+              padding: "24px",
+            }}
+          >
+            <div style={{ fontSize: "15px", fontWeight: 600 }}>
+              Connecting to {initParams?.host}:{initParams?.port}
+            </div>
+
+            {/* Progress steps */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px", width: "280px" }}>
+              {CONNECT_STEPS.map((step, i) => {
+                const isComplete = i < connectStep;
+                const isActive = i === connectStep;
+                return (
+                  <div
+                    key={step.label}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                      padding: "6px 0",
+                      opacity: i > connectStep ? 0.3 : 1,
+                      transition: "opacity 0.3s",
+                    }}
+                  >
+                    {/* Step indicator */}
+                    <div style={{
+                      width: "20px", height: "20px", borderRadius: "50%", flexShrink: 0,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: "11px", fontWeight: 600,
+                      background: isComplete ? "#22c55e" : isActive ? "#3b82f6" : "transparent",
+                      border: isActive ? "2px solid #3b82f6" : isComplete ? "none" : "2px solid #333",
+                      color: isComplete ? "#fff" : isActive ? "#3b82f6" : "#555",
+                      transition: "all 0.3s",
+                    }}>
+                      {isComplete ? "✓" : i + 1}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: "13px", fontWeight: isActive ? 600 : 400, color: isActive || isComplete ? "#c4c6d0" : "#555" }}>
+                        {step.label}
+                      </div>
+                      {isActive && (
+                        <div style={{ fontSize: "11px", color: "#71717a" }}>
+                          {step.detail}
+                        </div>
+                      )}
+                    </div>
+                    {isActive && (
+                      <div style={{
+                        width: "14px", height: "14px",
+                        border: "2px solid #333", borderTopColor: "#3b82f6",
+                        borderRadius: "50%",
+                        animation: "spin 0.8s linear infinite",
+                      }} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={winClose}
+              style={{
+                marginTop: "8px",
+                padding: "6px 20px",
+                background: "transparent",
+                border: "1px solid #333",
+                borderRadius: "6px",
+                color: "#71717a",
+                cursor: "pointer",
+                fontSize: "12px",
+                transition: "all 0.15s",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = "#555";
+                e.currentTarget.style.color = "#a1a1aa";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = "#333";
+                e.currentTarget.style.color = "#71717a";
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {/* Connection error overlay */}
+        {connectError && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "#08080d",
+              gap: "16px",
+              color: "#c4c6d0",
+              padding: "32px",
+              textAlign: "center",
+              zIndex: 10,
+            }}
+          >
+            <div style={{
+              width: "48px", height: "48px", borderRadius: "50%",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              background: "rgba(239, 68, 68, 0.1)", border: "1px solid rgba(239, 68, 68, 0.3)",
+            }}>
+              <span style={{ fontSize: "22px" }}>✕</span>
+            </div>
+            <div style={{ fontSize: "16px", fontWeight: 600, color: "#f38ba8" }}>
+              Connection failed
+            </div>
+            <pre style={{
+              fontSize: "12px", color: "#71717a",
+              maxWidth: "480px", maxHeight: "120px", overflow: "auto",
+              whiteSpace: "pre-wrap", wordBreak: "break-word",
+              background: "#131316", padding: "12px 16px", borderRadius: "6px",
+              border: "1px solid #27272a",
+            }}>
+              {connectError}
+            </pre>
+            <button
+              onClick={winClose}
+              style={{
+                marginTop: "4px",
+                padding: "8px 24px",
+                background: "#3b82f6",
+                border: "none",
+                borderRadius: "6px",
+                color: "#fff",
+                cursor: "pointer",
+                fontSize: "13px",
+                fontWeight: 500,
+                transition: "background 0.15s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "#60a5fa"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "#3b82f6"; }}
+            >
+              Close window
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

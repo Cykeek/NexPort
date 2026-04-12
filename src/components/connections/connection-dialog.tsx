@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useKeyStore } from "@/stores/key-store";
 import { X } from "lucide-react";
 import { toast } from "sonner";
+import { SSH_DEFAULTS } from "@/config/constants";
 import { ConnectionProfile } from "@/types/connection";
 
 interface ConnectionDialogProps {
@@ -17,8 +18,8 @@ interface ConnectionDialogProps {
 export function ConnectionDialog({ open, onOpenChange, editConnection, onSuccess }: ConnectionDialogProps) {
   const { keys } = useKeyStore();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [form, setForm] = useState({ name: "", host: "", port: "22", username: "", authMethod: "password" as "password" | "key", password: "", keyId: "", group: "" });
-  const [existingPassword, setExistingPassword] = useState<string | null>(null);
+  const [form, setForm] = useState({ name: "", host: "", port: String(SSH_DEFAULTS.port), username: "", authMethod: "password" as "password" | "key", password: "", keyId: "", group: "" });
+  const hasExistingPassword = editConnection?.has_password ?? false;
 
   useEffect(() => {
     if (editConnection) {
@@ -32,10 +33,8 @@ export function ConnectionDialog({ open, onOpenChange, editConnection, onSuccess
         keyId: editConnection.key_id || "",
         group: editConnection.group || "",
       });
-      setExistingPassword(editConnection.encrypted_password || null);
     } else {
-      setForm({ name: "", host: "", port: "22", username: "", authMethod: "password", password: "", keyId: "", group: "" });
-      setExistingPassword(null);
+      setForm({ name: "", host: "", port: String(SSH_DEFAULTS.port), username: "", authMethod: "password", password: "", keyId: "", group: "" });
     }
   }, [editConnection, open]);
 
@@ -46,28 +45,27 @@ export function ConnectionDialog({ open, onOpenChange, editConnection, onSuccess
     if (!form.name || !form.host || !form.username) return;
     setIsSubmitting(true);
     try {
-      // Use existing password if new password is empty
-      const finalPassword = form.password || existingPassword;
-      
-      const profile: ConnectionProfile = { 
-        id: editConnection?.id || crypto.randomUUID(),
-        name: form.name, 
-        host: form.host, 
-        port: parseInt(form.port) || 22, 
-        username: form.username, 
-        auth_method: form.authMethod,
-        key_id: form.authMethod === "key" ? form.keyId : undefined,
-        encrypted_password: finalPassword || undefined,
-        group: form.group || undefined 
-      };
-      
-      await invoke("save_connection", { profile });
-      
+      await invoke("save_connection", {
+        profile: {
+          id: editConnection?.id || crypto.randomUUID(),
+          name: form.name,
+          host: form.host,
+          port: parseInt(form.port) || 22,
+          username: form.username,
+          auth_method: form.authMethod,
+          key_id: form.authMethod === "key" ? form.keyId : undefined,
+          // Only send password if user typed a new one.
+          // When editing, undefined means "keep existing" on the backend.
+          encrypted_password: form.password || undefined,
+          group: form.group || undefined,
+        },
+      });
+
       toast.success(editConnection ? "Connection updated" : "Connection saved");
       onOpenChange(false);
       onSuccess?.();
-    } catch (err) { 
-      toast.error("Failed to save", { description: String(err) }); 
+    } catch (err) {
+      toast.error("Failed to save", { description: String(err) });
     }
     finally { setIsSubmitting(false); }
   };
@@ -118,7 +116,7 @@ export function ConnectionDialog({ open, onOpenChange, editConnection, onSuccess
               {form.authMethod === "password" && (
                 <div className="form-group">
                   <label className="form-label">Password</label>
-                  <input className="form-input" type="password" value={form.password} onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))} placeholder={editConnection ? "••••••••" : ""} />
+                  <input className="form-input" type="password" value={form.password} onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))} placeholder={hasExistingPassword ? "•••••••• (leave blank to keep existing)" : ""} />
                 </div>
               )}
               {form.authMethod === "key" && (

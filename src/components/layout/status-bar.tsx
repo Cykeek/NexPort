@@ -10,7 +10,7 @@ export function StatusBar() {
         </div>
       </div>
       <div className="statusbar-right">
-        <span className="statusbar-version">v0.1.0-alpha</span>
+        <span className="statusbar-version">v0.2.0-alpha</span>
       </div>
     </div>
   );

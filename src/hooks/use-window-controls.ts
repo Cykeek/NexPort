@@ -1,4 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useCallback, useEffect, useRef } from "react";
 
 export function useWindowControls() {
@@ -14,6 +15,14 @@ export function useWindowControls() {
 
   const handleClose = useCallback(async () => {
     const win = getCurrentWindow();
+    // Before closing the main window, close all terminal windows so their
+    // terminal pages can run their cleanup (disconnect SSH sessions).
+    const allWindows = await WebviewWindow.getAll();
+    for (const w of allWindows) {
+      if (w.label.startsWith("terminal-")) {
+        await w.close().catch(() => {});
+      }
+    }
     await win.close();
   }, []);
 
