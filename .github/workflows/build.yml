@@ -162,30 +162,20 @@ jobs:
 
       - name: Upload Release Assets
         run: |
-          # Wait for release to be created
           sleep 3
           
-          # Debug: print raw JSON response
-          echo "=== Getting release info ==="
           RELEASE_JSON=$(curl -sSL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/${{ github.repository }}/releases/tags/dev-${{ github.sha }}")
-          echo "Release JSON (first 500 chars):"
-          echo "$RELEASE_JSON" | head -c 500
           
-          # Extract upload URL - use tr to remove newlines and then extract
-          UPLOAD_URL=$(echo "$RELEASE_JSON" | tr -d '\n' | grep -o '"upload_url":"[^"]*"' | sed 's/"upload_url":"//' | sed 's/"$//' | sed 's/{?name,label}//')
+          UPLOAD_URL=$(echo "$RELEASE_JSON" | tr -d '\n' | grep -o '"upload_url":"[^"]*"' | sed 's/"upload_url":"//' | sed 's/}//' | sed 's/"//')
           
-          echo ""
           echo "Upload URL: $UPLOAD_URL"
           
           if [ -z "$UPLOAD_URL" ] || [ "$UPLOAD_URL" = "null" ]; then
             echo "Failed to get upload URL"
-            echo "Full response:"
-            echo "$RELEASE_JSON"
             exit 1
           fi
           
-          # Upload all files from artifacts
           for f in $(find artifacts -type f \( -name "*.exe" -o -name "*.zip" -o -name "*.msi" \) 2>/dev/null); do
             echo "Uploading: $f"
             RESPONSE=$(curl -sSL -w "\\nHTTP_CODE:%{http_code}" -X POST \
