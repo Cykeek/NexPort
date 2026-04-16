@@ -154,12 +154,35 @@ jobs:
           name: NexPort Dev Build v${{ steps.current_version.outputs.VERSION }}
           draft: false
           prerelease: true
+          generate_release_notes: false
           files: |
             latest.json
-            artifacts/nexport-windows-*/**/*.zip
-            artifacts/nexport-windows-*/**/*.exe
-            artifacts/nexport-linux-*/**/*
-            artifacts/nexport-macos-*/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Release Assets
+        run: |
+          # Wait for release to be created
+          sleep 2
+          
+          # Get the upload URL
+          RELEASE_JSON=$(curl -sSL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/dev-${{ github.sha }}")
+          UPLOAD_URL=$(echo "$RELEASE_JSON" | grep -o '"upload_url":"[^"]*"' | sed 's/"upload_url":"//;s/"$//' | sed 's/{?name,label}//')
+          
+          echo "Upload URL: $UPLOAD_URL"
+          
+          # Upload all files from artifacts
+          for f in $(find artifacts -type f \( -name "*.exe" -o -name "*.zip" -o -name "*.msi" -o -name "*.app" -o -name "*dmg" -o -name "*.deb" -o -name "*.rpm" \) 2>/dev/null); do
+            echo "Uploading: $f"
+            curl -sSL -X POST \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@$f" \
+              "$UPLOAD_URL?name=$(basename $f)"
+            echo "Uploaded: $(basename $f)"
+          done
+        shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
