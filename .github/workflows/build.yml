@@ -168,9 +168,14 @@ jobs:
           # Get the upload URL
           RELEASE_JSON=$(curl -sSL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/${{ github.repository }}/releases/tags/dev-${{ github.sha }}")
-          UPLOAD_URL=$(echo "$RELEASE_JSON" | grep -o '"upload_url":"[^"]*"' | sed 's/"upload_url":"//;s/"$//' | sed 's/{?name,label}//')
+          UPLOAD_URL=$(echo "$RELEASE_JSON" | grep -o '"upload_url":"[^"]*"' | cut -d'"' -f4 | sed 's/{?name,label}//')
           
           echo "Upload URL: $UPLOAD_URL"
+          
+          if [ -z "$UPLOAD_URL" ] || [ "$UPLOAD_URL" = "null" ]; then
+            echo "Failed to get upload URL"
+            exit 1
+          fi
           
           # Upload all files from artifacts
           for f in $(find artifacts -type f \( -name "*.exe" -o -name "*.zip" -o -name "*.msi" -o -name "*.app" -o -name "*dmg" -o -name "*.deb" -o -name "*.rpm" \) 2>/dev/null); do
