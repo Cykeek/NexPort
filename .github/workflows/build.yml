@@ -167,7 +167,7 @@ jobs:
           RELEASE_JSON=$(curl -sSL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/${{ github.repository }}/releases/tags/dev-${{ github.sha }}")
           
-          UPLOAD_URL=$(echo "$RELEASE_JSON" | tr -d '\n' | grep -o '"upload_url":"[^"]*"' | sed 's/"upload_url":"//' | sed 's/}//' | sed 's/"//')
+          UPLOAD_URL=$(echo "$RELEASE_JSON" | tr -d '\n' | grep -o '"upload_url":"[^"]*"' | sed 's/"upload_url":"//' | sed 's/}//' | sed 's/,//' | sed 's/"//')
           
           echo "Upload URL: $UPLOAD_URL"
           
