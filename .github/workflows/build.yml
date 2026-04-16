@@ -157,9 +157,9 @@ jobs:
           generate_release_notes: false
           files: |
             latest.json
-            artifacts/nexport-windows-*/*
-            artifacts/nexport-linux-*/*
-            artifacts/nexport-macos-*/*
+            artifacts/nexport-windows/**/*
+            artifacts/nexport-linux/**/*
+            artifacts/nexport-macos/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
