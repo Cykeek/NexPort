@@ -2,7 +2,7 @@ name: CI Build
 
 on:
   push:
-    branches: [main, dev, '**']
+    branches: [dev]
   pull_request:
     branches: ['**']
 
@@ -42,17 +42,10 @@ jobs:
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt update
-          sudo apt install -y build-essential libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libssl-dev pkg-config libglib2.0-dev libayatana-appindicator3-dev zip
+          sudo apt install -y build-essential libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libssl-dev pkg-config libglib2.0-dev libayatana-appindicator3-dev
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Get current version
-        id: current_version
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-        shell: bash
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
@@ -60,152 +53,71 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
-      - name: Sign macOS app (ad-hoc)
+      - name: Sign macOS app
         if: matrix.platform == 'macos-latest'
         run: |
           find src-tauri/target/release/bundle/macos -name "*.app" -exec codesign --force --deep --sign - {} \;
 
-      - name: Create ZIP bundles for updater
-        if: matrix.platform == 'windows-latest'
-        run: |
-          cd src-tauri/target/release/bundle
-          for dir in */*/; do
-            if [ -d "$dir" ] && [[ "$dir" == *"x64"* ]] && [[ "$dir" == *"nexport"* ]]; then
-              name=$(echo "$dir" | tr '/' '-' | tr '\\' '-')
-              zip -r "${name}.zip" "$dir"
-            fi
-          done
-          ls -la
-        shell: bash
-
-      - name: Upload build artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: nexport-${{ matrix.artifact_name }}
-          path: |
-            src-tauri/target/release/bundle/**/*
-            !src-tauri/target/release/bundle/**/*.sha256
+          path: src-tauri/target/release/bundle/**/*
 
   release:
     needs: build
-    if: github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Get current version
-        id: current_version
+      - name: Get version
+        id: version
         run: |
           VERSION=$(node -p "require('./package.json').version")
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-        shell: bash
 
-      - name: Download all artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Create latest.json for updater
+      - name: Prepare release files
         run: |
-          VERSION=${{ steps.current_version.outputs.VERSION }}
-          COMMIT_SHA=${{ github.sha }}
-          
-          # Find Windows installer and signature
-          WIN_DIR=$(find artifacts -type d -name "windows*" | head -1)
-          SIG_FILE=""
-          ZIP_FILE=""
-          
-          if [ -d "$WIN_DIR" ]; then
-            SIG_FILE=$(find "$WIN_DIR" -name "*.sig" | head -1)
-            ZIP_FILE=$(find "$WIN_DIR" -name "*.zip" | head -1)
-          fi
-          
-          SIGNATURE=""
-          if [ -f "$SIG_FILE" ]; then
-            SIGNATURE=$(cat "$SIG_FILE")
-          fi
-          
-          FILENAME=""
-          if [ -f "$ZIP_FILE" ]; then
-            FILENAME=$(basename "$ZIP_FILE")
-          fi
-          
-          # Find the Windows installer .exe
-          WIN_EXE=$(find artifacts -name "*-setup.exe" | head -1)
-          EXE_NAME=""
-          if [ -f "$WIN_EXE" ]; then
-            EXE_NAME=$(basename "$WIN_EXE")
-          fi
-          
-          # Use the .exe directly if no zip
-          DOWNLOAD_URL="$EXE_NAME"
-          if [ -n "$FILENAME" ]; then
-            DOWNLOAD_URL="$FILENAME"
-          fi
-          
-          cat > latest.json << EOF
+          mkdir -p release-files
+
+          # Copy installers only
+          cp artifacts/nexport-windows/*.{exe,msi,sig} release-files/ 2>/dev/null || true
+          cp artifacts/nexport-linux/*.{deb,AppImage,rpm,sig} release-files/ 2>/dev/null || true
+          cp artifacts/nexport-macos/*.{dmg,tar.gz,sig} release-files/ 2>/dev/null || true
+
+          # Create latest.json
+          SIG=$(find release-files -name "*.sig" | head -1 | xargs cat 2>/dev/null || echo "")
+          EXE=$(find release-files -name "*.exe" | head -1 | xargs basename 2>/dev/null || echo "")
+
+          cat > release-files/latest.json << EOF
           {
-            "version": "$VERSION",
-            "notes": "Version $VERSION - Auto-update from dev branch",
+            "version": "${{ steps.version.outputs.VERSION }}",
+            "notes": "Version ${{ steps.version.outputs.VERSION }}",
             "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "platforms": {
               "windows-x86_64": {
-                "signature": "$SIGNATURE",
-                "url": "https://github.com/Cykeek/NexPort/releases/download/dev-$COMMIT_SHA/$DOWNLOAD_URL"
+                "signature": "$SIG",
+                "url": "https://github.com/Cykeek/NexPort/releases/download/dev-${{ github.sha }}/$EXE"
               }
             }
           }
           EOF
-          cat latest.json
-        shell: bash
 
-      - name: Filter and upload only installer files
-        run: |
-          mkdir -p release-files
-          
-          # Windows installers (.exe, .msi)
-          find artifacts/nexport-windows -type f \( -name "*.exe" -o -name "*.msi" -o -name "*.sig" \) -exec cp {} release-files/ \;
-          
-          # Linux installers (.deb, .AppImage, .rpm)
-          find artifacts/nexport-linux -type f \( -name "*.deb" -o -name "*.AppImage" -o -name "*.rpm" -o -name "*.sig" \) -exec cp {} release-files/ \;
-          
-          # macOS installers (.dmg, .tar.gz)
-          find artifacts/nexport-macos -type f \( -name "*.dmg" -o -name "*.tar.gz" -o -name "*.sig" \) -exec cp {} release-files/ \;
-          
           ls -la release-files/
-          
-          # Upload release with only installer files
-          cd release-files
-          echo "latest.json" | cat ../latest.json - > temp.json && mv temp.json ../latest.json
-        shell: bash
 
-      - name: Create Release with installer files only
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: dev-${{ github.sha }}
-          name: NexPort Dev Build v${{ steps.current_version.outputs.VERSION }}
+          name: NexPort v${{ steps.version.outputs.VERSION }}
           draft: false
           prerelease: true
-          generate_release_notes: false
-          files: |
-            latest.json
-            release-files/*.exe
-            release-files/*.msi
-            release-files/*.sig
-            release-files/*.deb
-            release-files/*.AppImage
-            release-files/*.rpm
-            release-files/*.dmg
-            release-files/*.tar.gz
+          files: release-files/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Commit version bump
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add package.json src-tauri/tauri.conf.json
-          git diff --cached --quiet && exit 0
-          git commit -m "chore: bump version to ${{ steps.current_version.outputs.VERSION }}"
-          git push
