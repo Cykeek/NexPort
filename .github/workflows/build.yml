@@ -160,7 +160,27 @@ jobs:
           cat latest.json
         shell: bash
 
-      - name: Create Release with all assets
+      - name: Filter and upload only installer files
+        run: |
+          mkdir -p release-files
+          
+          # Windows installers (.exe, .msi)
+          find artifacts/nexport-windows -type f \( -name "*.exe" -o -name "*.msi" -o -name "*.sig" \) -exec cp {} release-files/ \;
+          
+          # Linux installers (.deb, .AppImage, .rpm)
+          find artifacts/nexport-linux -type f \( -name "*.deb" -o -name "*.AppImage" -o -name "*.rpm" -o -name "*.sig" \) -exec cp {} release-files/ \;
+          
+          # macOS installers (.dmg, .tar.gz)
+          find artifacts/nexport-macos -type f \( -name "*.dmg" -o -name "*.tar.gz" -o -name "*.sig" \) -exec cp {} release-files/ \;
+          
+          ls -la release-files/
+          
+          # Upload release with only installer files
+          cd release-files
+          echo "latest.json" | cat ../latest.json - > temp.json && mv temp.json ../latest.json
+        shell: bash
+
+      - name: Create Release with installer files only
         uses: softprops/action-gh-release@v2
         with:
           tag_name: dev-${{ github.sha }}
@@ -170,9 +190,14 @@ jobs:
           generate_release_notes: false
           files: |
             latest.json
-            artifacts/nexport-windows/**/*
-            artifacts/nexport-linux/**/*
-            artifacts/nexport-macos/**/*
+            release-files/*.exe
+            release-files/*.msi
+            release-files/*.sig
+            release-files/*.deb
+            release-files/*.AppImage
+            release-files/*.rpm
+            release-files/*.dmg
+            release-files/*.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
