@@ -91,8 +91,14 @@ jobs:
           cp artifacts/nexport-linux/*.{deb,AppImage,rpm,sig} release-files/ 2>/dev/null || true
           cp artifacts/nexport-macos/*.{dmg,tar.gz,sig} release-files/ 2>/dev/null || true
 
-          # Create latest.json
-          SIG=$(find release-files -name "*.sig" | head -1 | xargs cat 2>/dev/null || echo "")
+          # Find and read signature file properly
+          SIG_FILE=$(find release-files -name "*.sig" | head -1)
+          if [ -n "$SIG_FILE" ] && [ -f "$SIG_FILE" ]; then
+            SIG=$(cat "$SIG_FILE")
+          else
+            SIG=""
+          fi
+          
           EXE=$(find release-files -name "*.exe" | head -1 | xargs basename 2>/dev/null || echo "")
 
           cat > release-files/latest.json << EOF
@@ -109,7 +115,14 @@ jobs:
           }
           EOF
 
+          echo "=== Release files ==="
           ls -la release-files/
+          echo ""
+          echo "=== Signature file: $SIG_FILE ==="
+          echo "$SIG"
+          echo ""
+          echo "=== latest.json ==="
+          cat release-files/latest.json
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -121,3 +134,11 @@ jobs:
           files: release-files/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update latest tag
+        run: |
+          git fetch --tags
+          git tag -d latest || true
+          git push origin :refs/tags/latest || true
+          git tag latest
+          git push origin latest
