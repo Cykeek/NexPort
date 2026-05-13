@@ -54,31 +54,64 @@ export function SettingsPage() {
     setUpdate(null);
 
     try {
-      const result = await check({
-        headers: {},
-        timeout: 10,
-        endpoints: [CHANNEL_ENDPOINTS[activeChannel]],
-      });
+      if (activeChannel === "stable") {
+        // Stable channel uses the default endpoint from tauri.conf.json
+        const result = await check({ timeout: 10 });
+        if (result) {
+          setUpdate(result);
+          setUpdateInfo({
+            version: result.version,
+            date: result.date,
+            body: result.body || undefined,
+          });
+        }
+      } else {
+        // Dev channel: fetch manifest manually, then use check() with headers
+        // to signal the backend. Since Tauri doesn't support dynamic endpoints,
+        // we fetch the dev manifest and compare versions ourselves.
+        const response = await fetch(CHANNEL_ENDPOINTS.dev);
+        if (!response.ok) {
+          setUpdateInfo(null);
+          return;
+        }
+        const manifest = await response.json();
+        const currentVersion = "0.2.0-alpha"; // matches tauri.conf.json
 
-      if (result) {
-        setUpdate(result);
-        setUpdateInfo({
-          version: result.version,
-          date: result.date,
-          body: result.body || undefined,
-        });
+        // If the dev manifest has a different version, show it
+        if (manifest.version && manifest.version !== currentVersion) {
+          // Try check() — it will use the stable endpoint but if dev has a newer
+          // version we show the info. For actual install, we use check() which
+          // handles signature verification via the configured endpoint.
+          const result = await check({ timeout: 10 });
+          if (result) {
+            setUpdate(result);
+            setUpdateInfo({
+              version: result.version,
+              date: result.date,
+              body: result.body || undefined,
+            });
+          } else {
+            // Stable endpoint says no update, but dev has one — show dev info
+            // User will need to download manually or we show the version info
+            setUpdateInfo({
+              version: manifest.version,
+              date: manifest.pub_date,
+              body: manifest.notes || "Dev build available (manual download required)",
+            });
+            setUpdate(null);
+          }
+        }
       }
     } catch (e) {
       const errorStr = String(e);
-      // Suppress expected "no update" errors
       if (
         errorStr.includes("did not respond") ||
         errorStr.includes("Could not fetch") ||
         errorStr.includes("no releases") ||
         errorStr.includes("204") ||
-        errorStr.includes("Not Found")
+        errorStr.includes("Not Found") ||
+        errorStr.includes("Failed to fetch")
       ) {
-        // No update available or endpoint not yet set up
         setUpdateInfo(null);
       } else {
         console.error("Update check failed:", e);
@@ -90,7 +123,11 @@ export function SettingsPage() {
   };
 
   const downloadAndInstall = async () => {
-    if (!update) return;
+    if (!update) {
+      // Dev channel without auto-install — open GitHub releases page
+      window.open("https://github.com/Cykeek/NexPort/releases/tag/dev-latest", "_blank");
+      return;
+    }
     setDownloading(true);
     setError(null);
     try {
@@ -262,14 +299,19 @@ export function SettingsPage() {
             )}
             <button
               onClick={downloadAndInstall}
-              disabled={downloading}
+              disabled={downloading || !update}
               className="btn-primary"
-              style={{ width: "fit-content", padding: "8px 16px", fontSize: "12px", opacity: downloading ? 0.7 : 1 }}
+              style={{ width: "fit-content", padding: "8px 16px", fontSize: "12px", opacity: (downloading || !update) ? 0.7 : 1 }}
             >
               {downloading ? (
                 <>
                   <RefreshCw size={12} style={{ animation: "spin 1s linear infinite" }} />
                   Downloading...
+                </>
+              ) : !update ? (
+                <>
+                  <Download size={12} />
+                  Download from GitHub
                 </>
               ) : (
                 <>
