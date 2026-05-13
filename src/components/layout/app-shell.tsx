@@ -19,13 +19,10 @@ export function AppShell() {
 
   return (
     <div className="app">
-      {/* Top Navigation Bar */}
+      {/* Top Navigation Bar (drag region + window controls) */}
       <div className="topnav" ref={dragRef} style={{ cursor: "grab" }}>
-        <div className="topnav-left">
-          <span className="topnav-logo">SSH CONNECT</span>
-        </div>
+        <div className="topnav-left" />
         <div className="topnav-right">
-          <div className="topnav-divider" />
           <button className="topnav-btn" onClick={handleMinimize}>
             <Minus size={14} />
           </button>
@@ -44,6 +41,7 @@ export function AppShell() {
           open={sidebarOpen}
           activeNav={activePage}
           onNavChange={setActivePage}
+          onToggle={() => setSidebarOpen(!sidebarOpen)}
         />
         <ContentArea>
           <ErrorBoundary>

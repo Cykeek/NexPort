@@ -13,27 +13,52 @@ input::placeholder{color:var(--text-muted)}
 .app-body{flex:1;min-height:0;display:flex}
 
 /* Top Navigation */
-.topnav{background:var(--bg-elevated);border-bottom:1px solid var(--border);-webkit-user-select:none;user-select:none;flex-shrink:0;justify-content:space-between;align-items:center;height:44px;display:flex}
-.topnav-left{padding-left:16px}
-.topnav-logo{font-weight:600;font-size:14px;letter-spacing:.02em;color:var(--text)}
+.topnav{background:var(--bg-elevated);border-bottom:1px solid var(--border);-webkit-user-select:none;user-select:none;flex-shrink:0;justify-content:flex-end;align-items:center;height:38px;display:flex}
+.topnav-left{flex:1}
 .topnav-right{align-items:center;height:100%;display:flex}
-.topnav-divider{width:1px;height:24px;background:var(--border)}
 .topnav-btn{width:44px;height:100%;color:var(--text-muted);background:0 0;border:none;justify-content:center;align-items:center;transition:all .15s;display:flex}
 .topnav-btn:hover{background:var(--bg-hover);color:var(--text)}
 .topnav-btn:last-child:hover{background:var(--danger-subtle);color:var(--danger)}
 
 /* Sidebar */
-.sidebar{width:240px;background:var(--bg-elevated);border-right:1px solid var(--border);flex-shrink:0;display:flex;flex-direction:column}
-.sidebar-section{padding:20px 16px 12px}
-.sidebar-section-label{color:var(--text-muted);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px;padding:0 8px}
-.sidebar-nav-item{width:100%;display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:var(--radius-md);color:var(--text-secondary);background:0 0;border:none;text-align:left;transition:all .15s;font-size:13px;font-weight:500}
+.sidebar{width:220px;background:var(--bg-elevated);border-right:1px solid var(--border);flex-shrink:0;display:flex;flex-direction:column;transition:width .2s ease}
+.sidebar-collapsed{width:56px;align-items:center}
+
+/* Sidebar Brand */
+.sidebar-brand{display:flex;align-items:center;gap:10px;padding:16px 14px 20px;position:relative}
+.sidebar-brand-icon{width:28px;height:28px;background:linear-gradient(135deg,var(--accent),#6366f1);border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0}
+.sidebar-brand-name{font-size:13px;font-weight:600;color:var(--text);letter-spacing:-.01em}
+.sidebar-collapse-btn{width:24px;height:24px;border-radius:var(--radius-sm);color:var(--text-muted);background:0 0;border:none;display:flex;align-items:center;justify-content:center;transition:all .15s;margin-left:auto;opacity:0;cursor:pointer}
+.sidebar:hover .sidebar-collapse-btn{opacity:1}
+.sidebar-collapse-btn:hover{background:var(--bg-hover);color:var(--text)}
+
+/* Sidebar Collapsed */
+.sidebar-collapsed .sidebar-collapse-btn{opacity:1}
+.sidebar-collapsed-brand{padding:16px 0 12px;display:flex;justify-content:center}
+.sidebar-collapsed-footer{margin-top:auto;padding:12px 0;display:flex;justify-content:center}
+
+/* Sidebar Navigation */
+.sidebar-nav{display:flex;flex-direction:column;gap:4px;padding:0 10px;flex:1}
+.sidebar-nav-item{width:100%;display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--radius-md);color:var(--text-muted);background:0 0;border:none;text-align:left;transition:all .15s;font-size:13px;font-weight:500;cursor:pointer}
 .sidebar-nav-item:hover{background:var(--bg-hover);color:var(--text)}
-.sidebar-nav-item.active{background:var(--accent-subtle);color:var(--accent-hover);border:1px solid rgba(59,130,246,.3)}
-.sidebar-nav-item-icon{opacity:.6;flex-shrink:0}
-.sidebar-footer{padding:16px;margin-top:auto;border-top:1px solid var(--border)}
+.sidebar-nav-item.active{background:var(--accent);color:#fff}
+.sidebar-nav-item-icon{flex-shrink:0;width:16px;height:16px}
+.sidebar-nav-item.active .sidebar-nav-item-icon{color:#fff}
+.sidebar-nav-item-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* Sidebar Collapsed Nav */
+.sidebar-collapsed-nav{display:flex;flex-direction:column;gap:6px;padding:0;flex:1;align-items:center}
+.sidebar-collapsed-item{width:36px;height:36px;border-radius:var(--radius-md);color:var(--text-muted);background:0 0;border:none;display:flex;align-items:center;justify-content:center;transition:all .15s;cursor:pointer}
+.sidebar-collapsed-item:hover{background:var(--bg-hover);color:var(--text)}
+.sidebar-collapsed-item.active{background:var(--accent);color:#fff}
+
+/* Sidebar Footer */
+.sidebar-footer{padding:12px 14px;border-top:1px solid var(--border);display:flex;align-items:center}
+.sidebar-footer-version{font-size:11px;color:var(--text-muted);opacity:.5}
 
 /* Content Area */
 .content-area{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
+.content-scroll{flex:1;display:flex;flex-direction:column;overflow-y:auto;min-height:0}
 
 /* Page Headers */
 .connections-page,.keys-page{flex:1;display:flex;flex-direction:column;overflow:hidden}
@@ -124,6 +149,13 @@ input::placeholder{color:var(--text-muted)}
 /* Status Bar */
 .statusbar{background:var(--bg-elevated);border-top:1px solid var(--border);flex-shrink:0;justify-content:space-between;align-items:center;height:26px;padding:0 16px;display:flex;font-size:11px;color:var(--text-muted)}
 .statusbar-left,.statusbar-right{display:flex;align-items:center;gap:16px}
-.statusbar-status{display:flex;align-items:center;gap:8px}
-.status-dot{width:6px;height:6px;border-radius:50%;background:var(--success)}
-.statusbar-version{opacity:.5}
+.statusbar-network{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:500}
+.statusbar-network.connected{color:var(--text-secondary)}
+.statusbar-network.disconnected{color:var(--danger)}
+.statusbar-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.statusbar-dot.connected{background:var(--success)}
+.statusbar-dot.disconnected{background:var(--danger)}
+.statusbar-ip{color:var(--text-secondary);font-family:ui-monospace,monospace;font-size:10px}
+.statusbar-divider{width:1px;height:12px;background:var(--border)}
+.statusbar-meter{display:flex;align-items:center;gap:3px;color:var(--text-muted);font-size:10px;font-family:ui-monospace,monospace}
+.statusbar-meter-icon{color:var(--text-muted);opacity:.7}
