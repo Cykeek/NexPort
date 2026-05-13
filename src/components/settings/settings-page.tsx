@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { check, Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { Download, RefreshCw, Check, AlertCircle, ChevronDown } from "lucide-react";
+import { Download, RefreshCw, Check, ChevronDown, ExternalLink, Zap } from "lucide-react";
 
 type UpdateChannel = "stable" | "dev";
 
@@ -28,7 +28,6 @@ export function SettingsPage() {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [checking, setChecking] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [update, setUpdate] = useState<Update | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
@@ -42,20 +41,17 @@ export function SettingsPage() {
     localStorage.setItem("update-channel", newChannel);
     setUpdateInfo(null);
     setUpdate(null);
-    setError(null);
     checkForUpdates(newChannel);
   };
 
   const checkForUpdates = async (ch?: UpdateChannel) => {
     const activeChannel = ch || channel;
     setChecking(true);
-    setError(null);
     setUpdateInfo(null);
     setUpdate(null);
 
     try {
       if (activeChannel === "stable") {
-        // Stable channel uses the default endpoint from tauri.conf.json
         const result = await check({ timeout: 10 });
         if (result) {
           setUpdate(result);
@@ -66,45 +62,23 @@ export function SettingsPage() {
           });
         }
       } else {
-        // Dev channel: fetch manifest manually, then use check() with headers
-        // to signal the backend. Since Tauri doesn't support dynamic endpoints,
-        // we fetch the dev manifest and compare versions ourselves.
+        // Dev channel: fetch manifest manually since Tauri's check() always
+        // uses the endpoint from tauri.conf.json (stable).
         const response = await fetch(CHANNEL_ENDPOINTS.dev);
-        if (!response.ok) {
-          setUpdateInfo(null);
-          return;
-        }
+        if (!response.ok) { setUpdateInfo(null); return; }
         const manifest = await response.json();
-        const currentVersion = "0.2.0-alpha"; // matches tauri.conf.json
-
-        // If the dev manifest has a different version, show it
+        const currentVersion = "0.2.0-alpha";
         if (manifest.version && manifest.version !== currentVersion) {
-          // Try check() — it will use the stable endpoint but if dev has a newer
-          // version we show the info. For actual install, we use check() which
-          // handles signature verification via the configured endpoint.
-          const result = await check({ timeout: 10 });
-          if (result) {
-            setUpdate(result);
-            setUpdateInfo({
-              version: result.version,
-              date: result.date,
-              body: result.body || undefined,
-            });
-          } else {
-            // Stable endpoint says no update, but dev has one — show dev info
-            // User will need to download manually or we show the version info
-            setUpdateInfo({
-              version: manifest.version,
-              date: manifest.pub_date,
-              body: manifest.notes || "Dev build available (manual download required)",
-            });
-            setUpdate(null);
-          }
+          setUpdateInfo({
+            version: manifest.version,
+            date: manifest.pub_date,
+            body: manifest.notes || "Dev build available",
+          });
+          // No auto-install for dev channel — user downloads from GitHub
+          setUpdate(null);
         }
       }
     } catch (e) {
-      // Any error from check() means the endpoint is unreachable or has no valid release.
-      // This is expected when no stable release exists yet, or the dev endpoint isn't set up.
       console.warn("Update check:", String(e));
       setUpdateInfo(null);
     } finally {
@@ -114,126 +88,103 @@ export function SettingsPage() {
 
   const downloadAndInstall = async () => {
     if (!update) {
-      // Dev channel without auto-install — open GitHub releases page
       window.open("https://github.com/Cykeek/NexPort/releases/tag/dev-latest", "_blank");
       return;
     }
     setDownloading(true);
-    setError(null);
     try {
       await update.downloadAndInstall();
       await relaunch();
     } catch (e) {
-      setError(String(e));
+      console.error("Download failed:", e);
       setDownloading(false);
     }
   };
 
   return (
-    <div style={{ padding: "24px", maxWidth: "600px" }}>
-      <h1 style={{ fontSize: "20px", fontWeight: 600, marginBottom: "24px", color: "var(--text)" }}>
-        Settings
-      </h1>
+    <div className="settings-page">
+      <h1 className="settings-title">Settings</h1>
 
-      <div style={{
-        background: "var(--bg-elevated)",
-        border: "1px solid var(--border)",
-        borderRadius: "var(--radius-lg)",
-        padding: "20px",
-      }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-          <h2 style={{ fontSize: "16px", fontWeight: 600, color: "var(--text)" }}>
-            Updates
-          </h2>
+      {/* About Section */}
+      <div className="settings-section">
+        <div className="settings-section-header">
+          <span className="settings-section-title">About</span>
+          <span className="settings-section-badge">v0.2.0-alpha</span>
+        </div>
 
-          {/* Channel Dropdown */}
-          <div style={{ position: "relative" }}>
-            <button
-              onClick={() => setDropdownOpen(!dropdownOpen)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "6px 12px",
-                background: "var(--bg-surface)",
-                border: "1px solid var(--border)",
-                borderRadius: "var(--radius-md)",
-                color: "var(--text-secondary)",
-                fontSize: "12px",
-                fontWeight: 500,
-                cursor: "pointer",
-                transition: "all .15s",
-              }}
-            >
-              <span style={{
-                width: "6px",
-                height: "6px",
-                borderRadius: "50%",
-                background: channel === "stable" ? "var(--success)" : "var(--warning)",
-              }} />
+        <div className="settings-row">
+          <div className="settings-row-left">
+            <div className="settings-row-icon">
+              <Zap size={16} />
+            </div>
+            <div className="settings-row-text">
+              <span className="settings-row-label">NexPort</span>
+              <span className="settings-row-desc">A modern SSH client for desktop</span>
+            </div>
+          </div>
+          <a
+            href="https://github.com/Cykeek/NexPort"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="settings-row-action-link"
+          >
+            GitHub <ExternalLink size={11} />
+          </a>
+        </div>
+
+        <div className="settings-row">
+          <div className="settings-row-left">
+            <div className="settings-row-text">
+              <span className="settings-row-label">Version</span>
+              <span className="settings-row-desc">Current installed version</span>
+            </div>
+          </div>
+          <span className="settings-row-value">0.2.0-alpha</span>
+        </div>
+
+        <div className="settings-row">
+          <div className="settings-row-left">
+            <div className="settings-row-text">
+              <span className="settings-row-label">Build</span>
+              <span className="settings-row-desc">Release channel for this build</span>
+            </div>
+          </div>
+          <span className="settings-row-value">{channel}</span>
+        </div>
+      </div>
+
+      {/* Updates Section */}
+      <div className="settings-section">
+        <div className="settings-section-header">
+          <span className="settings-section-title">Updates</span>
+        </div>
+
+        <div className="settings-row">
+          <div className="settings-row-left">
+            <div className="settings-row-text">
+              <span className="settings-row-label">Update channel</span>
+              <span className="settings-row-desc">Choose between stable and dev builds</span>
+            </div>
+          </div>
+          <div className="settings-dropdown-wrapper">
+            <button className="settings-channel-btn" onClick={() => setDropdownOpen(!dropdownOpen)}>
+              <span className="settings-channel-dot" style={{ background: channel === "stable" ? "var(--success)" : "var(--warning)" }} />
               {channel === "stable" ? "Stable" : "Dev"}
-              <ChevronDown size={12} />
+              <ChevronDown size={11} />
             </button>
-
             {dropdownOpen && (
               <>
-                <div
-                  style={{ position: "fixed", inset: 0, zIndex: 40 }}
-                  onClick={() => setDropdownOpen(false)}
-                />
-                <div style={{
-                  position: "absolute",
-                  top: "calc(100% + 4px)",
-                  right: 0,
-                  background: "var(--bg-elevated)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "var(--radius-md)",
-                  padding: "4px",
-                  zIndex: 50,
-                  minWidth: "140px",
-                  boxShadow: "0 8px 24px rgba(0,0,0,.4)",
-                }}>
-                  <button
-                    onClick={() => handleChannelChange("stable")}
-                    style={{
-                      width: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      padding: "8px 10px",
-                      background: channel === "stable" ? "var(--bg-active)" : "transparent",
-                      border: "none",
-                      borderRadius: "var(--radius-sm)",
-                      color: "var(--text)",
-                      fontSize: "12px",
-                      cursor: "pointer",
-                      textAlign: "left",
-                    }}
-                  >
-                    <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--success)" }} />
+                <div className="settings-dropdown-backdrop" onClick={() => setDropdownOpen(false)} />
+                <div className="settings-dropdown-menu">
+                  <button className={`settings-dropdown-item ${channel === "stable" ? "active" : ""}`} onClick={() => handleChannelChange("stable")}>
+                    <span className="settings-channel-dot" style={{ background: "var(--success)" }} />
                     Stable
-                    <span style={{ marginLeft: "auto", fontSize: "11px", color: "var(--text-muted)" }}>main</span>
+                    <span className="settings-dropdown-hint">main</span>
                   </button>
-                  <button
-                    onClick={() => handleChannelChange("dev")}
-                    style={{
-                      width: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      padding: "8px 10px",
-                      background: channel === "dev" ? "var(--bg-active)" : "transparent",
-                      border: "none",
-                      borderRadius: "var(--radius-sm)",
-                      color: "var(--text)",
-                      fontSize: "12px",
-                      cursor: "pointer",
-                      textAlign: "left",
-                    }}
-                  >
-                    <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--warning)" }} />
+                  <button className={`settings-dropdown-item ${channel === "dev" ? "active" : ""}`} onClick={() => handleChannelChange("dev")}>
+                    <span className="settings-channel-dot" style={{ background: "var(--warning)" }} />
                     Dev
-                    <span style={{ marginLeft: "auto", fontSize: "11px", color: "var(--text-muted)" }}>dev</span>
+                    <span className="settings-dropdown-hint">dev</span>
                   </button>
                 </div>
               </>
@@ -241,108 +192,65 @@ export function SettingsPage() {
           </div>
         </div>
 
-        <div style={{ marginBottom: "16px", color: "var(--text-secondary)", fontSize: "13px" }}>
-          Current Version: <span style={{ fontWeight: 500, color: "var(--text)" }}>0.2.0-alpha</span>
+        <div className="settings-row">
+          <div className="settings-row-left">
+            <div className="settings-row-text">
+              <span className="settings-row-label">Check for updates</span>
+              <span className="settings-row-desc">
+                {checking
+                  ? "Checking..."
+                  : updateInfo
+                    ? `Update available: ${updateInfo.version}`
+                    : channel === "stable"
+                      ? "No stable release yet — you're on a dev build"
+                      : "You're on the latest dev build"}
+              </span>
+            </div>
+          </div>
+          {checking ? (
+            <div className="settings-row-action-btn disabled">
+              <RefreshCw size={12} className="settings-spin" />
+              Checking
+            </div>
+          ) : updateInfo ? (
+            <button className="settings-row-action-btn primary" onClick={downloadAndInstall} disabled={downloading}>
+              {downloading ? <RefreshCw size={12} className="settings-spin" /> : <Download size={12} />}
+              {downloading ? "Installing..." : update ? "Install" : "Download"}
+            </button>
+          ) : (
+            <button className="settings-row-action-btn" onClick={() => checkForUpdates()}>
+              <RefreshCw size={12} />
+              Check now
+            </button>
+          )}
         </div>
 
-        {checking ? (
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "var(--text-secondary)", fontSize: "13px" }}>
-            <RefreshCw size={14} style={{ animation: "spin 1s linear infinite" }} />
-            <span>Checking for updates on {channel} channel...</span>
-          </div>
-        ) : error ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "var(--danger)", fontSize: "13px" }}>
-              <AlertCircle size={14} />
-              <span>Failed to check for updates</span>
+        <div className="settings-row">
+          <div className="settings-row-left">
+            <div className="settings-row-text">
+              <span className="settings-row-label">Status</span>
+              <span className="settings-row-desc">Current update status</span>
             </div>
-            <button onClick={() => checkForUpdates()} className="btn-secondary" style={{ width: "fit-content", padding: "8px 14px", fontSize: "12px" }}>
-              <RefreshCw size={12} />
-              Retry
-            </button>
           </div>
-        ) : updateInfo ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            <div style={{
-              padding: "10px 14px",
-              background: "var(--success-subtle)",
-              border: "1px solid rgba(34,197,94,.3)",
-              borderRadius: "var(--radius-md)",
-              color: "var(--success)",
-              fontSize: "13px",
-            }}>
-              Update available: <strong>{updateInfo.version}</strong>
-            </div>
-            {updateInfo.body && (
-              <div style={{
-                padding: "10px 12px",
-                background: "var(--bg-surface)",
-                borderRadius: "var(--radius-md)",
-                fontSize: "12px",
-                color: "var(--text-secondary)",
-                maxHeight: "120px",
-                overflow: "auto",
-                lineHeight: 1.5,
-              }}>
-                {updateInfo.body}
-              </div>
+          <div className="settings-status-indicator">
+            {checking ? (
+              <>
+                <RefreshCw size={12} className="settings-spin" />
+                <span>Checking</span>
+              </>
+            ) : updateInfo ? (
+              <>
+                <Download size={12} />
+                <span>Update ready</span>
+              </>
+            ) : (
+              <>
+                <Check size={12} />
+                <span>Up to date</span>
+              </>
             )}
-            <button
-              onClick={downloadAndInstall}
-              disabled={downloading || !update}
-              className="btn-primary"
-              style={{ width: "fit-content", padding: "8px 16px", fontSize: "12px", opacity: (downloading || !update) ? 0.7 : 1 }}
-            >
-              {downloading ? (
-                <>
-                  <RefreshCw size={12} style={{ animation: "spin 1s linear infinite" }} />
-                  Downloading...
-                </>
-              ) : !update ? (
-                <>
-                  <Download size={12} />
-                  Download from GitHub
-                </>
-              ) : (
-                <>
-                  <Download size={12} />
-                  Download & Install
-                </>
-              )}
-            </button>
           </div>
-        ) : (
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "var(--success)", fontSize: "13px" }}>
-            <Check size={14} />
-            <span>
-              {channel === "stable"
-                ? "No stable release available yet — you're on a dev build"
-                : "You're on the latest dev build"}
-            </span>
-          </div>
-        )}
-
-        {!checking && !error && (
-          <button
-            onClick={() => checkForUpdates()}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              marginTop: "14px",
-              padding: "7px 12px",
-              background: "transparent",
-              color: "var(--text-muted)",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius-md)",
-              cursor: "pointer",
-              fontSize: "12px",
-            }}
-          >
-            <RefreshCw size={12} />
-            Check Again
-          </button>
-        )}
+        </div>
       </div>
     </div>
   );
