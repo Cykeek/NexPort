@@ -15,10 +15,13 @@ jobs:
         include:
           - platform: 'macos-latest'
             artifact_name: 'macos'
+            target: 'darwin-x86_64'
           - platform: 'ubuntu-22.04'
             artifact_name: 'linux'
+            target: 'linux-x86_64'
           - platform: 'windows-latest'
             artifact_name: 'windows'
+            target: 'windows-x86_64'
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -56,49 +59,131 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          version: ${{ steps.version.outputs.VERSION }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
       - name: Sign macOS app (ad-hoc)
         if: matrix.platform == 'macos-latest'
         run: |
           find src-tauri/target/release/bundle/macos -name "*.app" -exec codesign --force --deep --sign - {} \;
 
+      - name: Collect release assets
+        id: assets
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          
+          if [ "${{ matrix.platform }}" == "windows-latest" ]; then
+            find src-tauri/target/release/bundle -name "*.exe" -exec cp {} release-assets/ \;
+            find src-tauri/target/release/bundle -name "*.msi" -exec cp {} release-assets/ \;
+            find src-tauri/target/release/bundle -name "*.exe.sig" -exec cp {} release-assets/ \;
+            find src-tauri/target/release/bundle -name "*.msi.sig" -exec cp {} release-assets/ \;
+          elif [ "${{ matrix.platform }}" == "ubuntu-22.04" ]; then
+            find src-tauri/target/release/bundle -name "*.deb" -exec cp {} release-assets/ \;
+            find src-tauri/target/release/bundle -name "*.AppImage" -exec cp {} release-assets/ \;
+            find src-tauri/target/release/bundle -name "*.AppImage.sig" -exec cp {} release-assets/ \;
+            find src-tauri/target/release/bundle -name "*.rpm" -exec cp {} release-assets/ \;
+          elif [ "${{ matrix.platform }}" == "macos-latest" ]; then
+            find src-tauri/target/release/bundle -name "*.dmg" -exec cp {} release-assets/ \;
+            find src-tauri/target/release/bundle -name "*.tar.gz" -exec cp {} release-assets/ \;
+            find src-tauri/target/release/bundle -name "*.tar.gz.sig" -exec cp {} release-assets/ \;
+          fi
+          
+          echo "=== Release assets ==="
+          ls -la release-assets/
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: nexport-${{ matrix.artifact_name }}-${{ steps.version.outputs.VERSION }}
-          path: |
-            src-tauri/target/release/bundle/**/*
-            !src-tauri/target/release/bundle/**/*.sha256
+          name: nexport-${{ matrix.artifact_name }}
+          path: release-assets/*
 
   release:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Get version
-        id: version
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+      - name: Prepare release files and generate latest.json
         shell: bash
+        run: |
+          mkdir -p release-files
+          
+          # Flatten all artifacts into release-files
+          find artifacts -type f \( -name "*.exe" -o -name "*.msi" -o -name "*.deb" -o -name "*.AppImage" -o -name "*.rpm" -o -name "*.dmg" -o -name "*.tar.gz" -o -name "*.sig" \) -exec cp {} release-files/ \;
+          
+          echo "=== All release files ==="
+          ls -la release-files/
+          
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          TAG="v${VERSION}"
+          BASE_URL="https://github.com/Cykeek/NexPort/releases/download/${TAG}"
+          
+          # Build platforms JSON
+          PLATFORMS="{"
+          
+          # Windows
+          WIN_EXE=$(find release-files -name "*.exe" | head -1 | xargs basename 2>/dev/null || echo "")
+          WIN_SIG_FILE=$(find release-files -name "*.exe.sig" | head -1)
+          if [ -n "$WIN_EXE" ] && [ -n "$WIN_SIG_FILE" ]; then
+            WIN_SIG=$(cat "$WIN_SIG_FILE")
+            PLATFORMS="${PLATFORMS}\"windows-x86_64\":{\"signature\":\"${WIN_SIG}\",\"url\":\"${BASE_URL}/${WIN_EXE}\"}"
+          fi
+          
+          # Linux
+          LINUX_APPIMAGE=$(find release-files -name "*.AppImage" | head -1 | xargs basename 2>/dev/null || echo "")
+          LINUX_SIG_FILE=$(find release-files -name "*.AppImage.sig" | head -1)
+          if [ -n "$LINUX_APPIMAGE" ] && [ -n "$LINUX_SIG_FILE" ]; then
+            LINUX_SIG=$(cat "$LINUX_SIG_FILE")
+            if [ -n "$WIN_EXE" ]; then PLATFORMS="${PLATFORMS},"; fi
+            PLATFORMS="${PLATFORMS}\"linux-x86_64\":{\"signature\":\"${LINUX_SIG}\",\"url\":\"${BASE_URL}/${LINUX_APPIMAGE}\"}"
+          fi
+          
+          # macOS
+          MAC_TAR=$(find release-files -name "*.tar.gz" ! -name "*.sig" | head -1 | xargs basename 2>/dev/null || echo "")
+          MAC_SIG_FILE=$(find release-files -name "*.tar.gz.sig" | head -1)
+          if [ -n "$MAC_TAR" ] && [ -n "$MAC_SIG_FILE" ]; then
+            MAC_SIG=$(cat "$MAC_SIG_FILE")
+            if [ -n "$WIN_EXE" ] || [ -n "$LINUX_APPIMAGE" ]; then PLATFORMS="${PLATFORMS},"; fi
+            PLATFORMS="${PLATFORMS}\"darwin-x86_64\":{\"signature\":\"${MAC_SIG}\",\"url\":\"${BASE_URL}/${MAC_TAR}\"}"
+          fi
+          
+          PLATFORMS="${PLATFORMS}}"
+          
+          # Generate latest.json
+          cat > release-files/latest.json << EOF
+          {
+            "version": "${VERSION}",
+            "notes": "NexPort ${VERSION}",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": ${PLATFORMS}
+          }
+          EOF
+          
+          echo ""
+          echo "=== latest.json ==="
+          cat release-files/latest.json
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: nexport-${{ steps.version.outputs.VERSION }}
-          name: NexPort ${{ steps.version.outputs.VERSION }}
+          tag_name: v${{ steps.version.outputs.VERSION }}
+          name: NexPort v${{ steps.version.outputs.VERSION }}
           draft: false
           prerelease: ${{ contains(steps.version.outputs.VERSION, 'alpha') || contains(steps.version.outputs.VERSION, 'beta') }}
           generate_release_notes: true
-          files: |
-            artifacts/nexport-windows-*/**/*
-            artifacts/nexport-linux-*/**/*
-            artifacts/nexport-macos-*/**/*
+          files: release-files/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

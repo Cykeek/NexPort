@@ -1,4 +1,4 @@
-name: CI Build
+name: Dev Build
 
 on:
   push:
@@ -58,13 +58,39 @@ jobs:
         run: |
           find src-tauri/target/release/bundle/macos -name "*.app" -exec codesign --force --deep --sign - {} \;
 
+      - name: Collect release assets
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          
+          if [ "${{ matrix.platform }}" == "windows-latest" ]; then
+            find src-tauri/target/release/bundle -name "*.exe" -exec cp {} release-assets/ \;
+            find src-tauri/target/release/bundle -name "*.msi" -exec cp {} release-assets/ \;
+            find src-tauri/target/release/bundle -name "*.exe.sig" -exec cp {} release-assets/ \;
+            find src-tauri/target/release/bundle -name "*.msi.sig" -exec cp {} release-assets/ \;
+          elif [ "${{ matrix.platform }}" == "ubuntu-22.04" ]; then
+            find src-tauri/target/release/bundle -name "*.deb" -exec cp {} release-assets/ \;
+            find src-tauri/target/release/bundle -name "*.AppImage" -exec cp {} release-assets/ \;
+            find src-tauri/target/release/bundle -name "*.AppImage.sig" -exec cp {} release-assets/ \;
+            find src-tauri/target/release/bundle -name "*.rpm" -exec cp {} release-assets/ \;
+          elif [ "${{ matrix.platform }}" == "macos-latest" ]; then
+            find src-tauri/target/release/bundle -name "*.dmg" -exec cp {} release-assets/ \;
+            find src-tauri/target/release/bundle -name "*.tar.gz" -exec cp {} release-assets/ \;
+            find src-tauri/target/release/bundle -name "*.tar.gz.sig" -exec cp {} release-assets/ \;
+          fi
+          
+          ls -la release-assets/
+
       - name: Upload artifacts
+        if: github.event_name == 'push'
         uses: actions/upload-artifact@v4
         with:
           name: nexport-${{ matrix.artifact_name }}
-          path: src-tauri/target/release/bundle/**/*
+          path: release-assets/*
 
   release:
+    if: github.event_name == 'push'
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -73,6 +99,7 @@ jobs:
 
       - name: Get version
         id: version
+        shell: bash
         run: |
           VERSION=$(node -p "require('./package.json').version")
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
@@ -82,63 +109,78 @@ jobs:
         with:
           path: artifacts
 
-      - name: Prepare release files
+      - name: Prepare release files and generate latest.json
+        shell: bash
         run: |
           mkdir -p release-files
-
-          # Copy installers only
-          cp artifacts/nexport-windows/*.{exe,msi,sig} release-files/ 2>/dev/null || true
-          cp artifacts/nexport-linux/*.{deb,AppImage,rpm,sig} release-files/ 2>/dev/null || true
-          cp artifacts/nexport-macos/*.{dmg,tar.gz,sig} release-files/ 2>/dev/null || true
-
-          # Find and read signature file properly
-          SIG_FILE=$(find release-files -name "*.sig" | head -1)
-          if [ -n "$SIG_FILE" ] && [ -f "$SIG_FILE" ]; then
-            SIG=$(cat "$SIG_FILE")
-          else
-            SIG=""
+          
+          # Flatten all artifacts into release-files
+          find artifacts -type f \( -name "*.exe" -o -name "*.msi" -o -name "*.deb" -o -name "*.AppImage" -o -name "*.rpm" -o -name "*.dmg" -o -name "*.tar.gz" -o -name "*.sig" \) -exec cp {} release-files/ \;
+          
+          echo "=== All release files ==="
+          ls -la release-files/
+          
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          TAG="dev-latest"
+          BASE_URL="https://github.com/Cykeek/NexPort/releases/download/${TAG}"
+          
+          # Build platforms JSON
+          PLATFORMS="{"
+          
+          # Windows
+          WIN_EXE=$(find release-files -name "*.exe" | head -1 | xargs basename 2>/dev/null || echo "")
+          WIN_SIG_FILE=$(find release-files -name "*.exe.sig" | head -1)
+          if [ -n "$WIN_EXE" ] && [ -n "$WIN_SIG_FILE" ]; then
+            WIN_SIG=$(cat "$WIN_SIG_FILE")
+            PLATFORMS="${PLATFORMS}\"windows-x86_64\":{\"signature\":\"${WIN_SIG}\",\"url\":\"${BASE_URL}/${WIN_EXE}\"}"
           fi
           
-          EXE=$(find release-files -name "*.exe" | head -1 | xargs basename 2>/dev/null || echo "")
-
+          # Linux
+          LINUX_APPIMAGE=$(find release-files -name "*.AppImage" | head -1 | xargs basename 2>/dev/null || echo "")
+          LINUX_SIG_FILE=$(find release-files -name "*.AppImage.sig" | head -1)
+          if [ -n "$LINUX_APPIMAGE" ] && [ -n "$LINUX_SIG_FILE" ]; then
+            LINUX_SIG=$(cat "$LINUX_SIG_FILE")
+            if [ -n "$WIN_EXE" ]; then PLATFORMS="${PLATFORMS},"; fi
+            PLATFORMS="${PLATFORMS}\"linux-x86_64\":{\"signature\":\"${LINUX_SIG}\",\"url\":\"${BASE_URL}/${LINUX_APPIMAGE}\"}"
+          fi
+          
+          # macOS
+          MAC_TAR=$(find release-files -name "*.tar.gz" ! -name "*.sig" | head -1 | xargs basename 2>/dev/null || echo "")
+          MAC_SIG_FILE=$(find release-files -name "*.tar.gz.sig" | head -1)
+          if [ -n "$MAC_TAR" ] && [ -n "$MAC_SIG_FILE" ]; then
+            MAC_SIG=$(cat "$MAC_SIG_FILE")
+            if [ -n "$WIN_EXE" ] || [ -n "$LINUX_APPIMAGE" ]; then PLATFORMS="${PLATFORMS},"; fi
+            PLATFORMS="${PLATFORMS}\"darwin-x86_64\":{\"signature\":\"${MAC_SIG}\",\"url\":\"${BASE_URL}/${MAC_TAR}\"}"
+          fi
+          
+          PLATFORMS="${PLATFORMS}}"
+          
+          # Generate latest.json
           cat > release-files/latest.json << EOF
           {
-            "version": "${{ steps.version.outputs.VERSION }}",
-            "notes": "Version ${{ steps.version.outputs.VERSION }}",
+            "version": "${VERSION}-dev.$(echo ${{ github.sha }} | cut -c1-7)",
+            "notes": "Dev build from commit ${{ github.sha }}",
             "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "platforms": {
-              "windows-x86_64": {
-                "signature": "$SIG",
-                "url": "https://github.com/Cykeek/NexPort/releases/download/dev-${{ github.sha }}/$EXE"
-              }
-            }
+            "platforms": ${PLATFORMS}
           }
           EOF
-
-          echo "=== Release files ==="
-          ls -la release-files/
-          echo ""
-          echo "=== Signature file: $SIG_FILE ==="
-          echo "$SIG"
+          
           echo ""
           echo "=== latest.json ==="
           cat release-files/latest.json
 
-      - name: Create Release
+      - name: Create/Update Dev Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: dev-${{ github.sha }}
-          name: NexPort v${{ steps.version.outputs.VERSION }}
+          tag_name: dev-latest
+          name: NexPort Dev Build
           draft: false
           prerelease: true
           files: release-files/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Update latest tag
+      - name: Update dev-latest tag
         run: |
-          git fetch --tags
-          git tag -d latest || true
-          git push origin :refs/tags/latest || true
-          git tag latest
-          git push origin latest
+          git tag -f dev-latest
+          git push origin dev-latest --force
