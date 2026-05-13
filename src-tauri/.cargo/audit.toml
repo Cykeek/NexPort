@@ -1,0 +1,20 @@
+# cargo-audit ignore list
+# https://docs.rs/cargo-audit
+#
+# These advisories cannot be resolved within the current Tauri 2.x ecosystem.
+# All are transitive dependencies with no available upgrade path.
+
+[advisories]
+ignore = [
+    # RUSTSEC-2024-0429: glib VariantStrIter unsoundness
+    # Requires glib >= 0.20.0, but gtk 0.18.2 (Tauri's Linux windowing) pins glib ^0.18.
+    # Affected functions (VariantStrIter::next/last/nth) are NOT used by Tauri.
+    # Linux-only dependency — not compiled on Windows.
+    # Resolution: awaiting Tauri's migration to gtk4-rs.
+    "RUSTSEC-2024-0429",
+
+    # RUSTSEC-2023-0071: RSA Marvin Attack timing side-channel
+    # No fixed version of the `rsa` crate exists.
+    # Our app primarily uses ed25519 keys; RSA is for legacy compatibility only.
+    "RUSTSEC-2023-0071",
+]
