@@ -9,6 +9,7 @@ use russh_keys::{PrivateKey, PublicKey};
 use zeroize::Zeroize;
 use rand::thread_rng;
 use russh_keys::Algorithm as RusshAlgorithm;
+use base64::Engine;
 
 const KEYS_TABLE: TableDefinition<&str, &str> = TableDefinition::new("keys");
 
@@ -61,24 +62,218 @@ fn save_key_to_db(state: &State<'_, AppState>, id: &str, stored_key: &StoredKey)
 }
 
 // Parse an OpenSSH-format private key of any supported type
-// (ed25519, RSA, ECDSA). Delegates to the `ssh_key` crate instead
-// of fragile byte-offset manipulation.
+// (ed25519, RSA, ECDSA). Supports keys from various sources including
+// those with non-standard line wrapping or compact formatting.
 fn parse_private_key(raw: &str) -> Result<PrivateKey, String> {
     let normalized = raw.trim().replace("\r\n", "\n").replace("\r", "\n");
     if normalized.is_empty() {
         return Err("Empty key data".to_string());
     }
 
-    // Use the ssh_key crate's native parser — supports all key types.
-    let ssh_privkey = SshPrivateKey::from_openssh(&normalized)
-        .map_err(|e| format!("Failed to parse key: {}", e))?;
+    // Re-wrap PEM base64 body to 70-char lines if needed
+    let pem_ready = normalize_pem_wrapping(&normalized);
 
-    // Convert to russh_keys PrivateKey via OpenSSH serialization.
-    let openssh = ssh_privkey.to_openssh(LineEnding::LF)
-        .map_err(|e| format!("Failed to serialize key: {}", e))?;
+    // Try russh_keys directly first
+    match PrivateKey::from_openssh(pem_ready.as_bytes()) {
+        Ok(key) => return Ok(key),
+        Err(e) => {
+            log::debug!("[key-import] russh_keys direct parse failed: {}", e);
+        }
+    }
 
-    PrivateKey::from_openssh(openssh.as_bytes())
-        .map_err(|e| format!("Failed to load key into SSH library: {}", e))
+    // Try ssh_key crate
+    match SshPrivateKey::from_openssh(&pem_ready) {
+        Ok(ssh_privkey) => {
+            let openssh = ssh_privkey.to_openssh(LineEnding::LF)
+                .map_err(|e| format!("Failed to serialize key: {}", e))?;
+            return PrivateKey::from_openssh(openssh.as_bytes())
+                .map_err(|e| format!("Failed to load key into SSH library: {}", e));
+        }
+        Err(e) => {
+            log::debug!("[key-import] ssh_key crate also failed: {}", e);
+        }
+    }
+
+    // Both parsers failed — likely non-standard padding. Fix and retry.
+    log::info!("[key-import] Attempting padding fix...");
+    let fixed_pem = fix_openssh_padding(&pem_ready)?;
+
+    PrivateKey::from_openssh(fixed_pem.as_bytes())
+        .map_err(|e| {
+            log::error!("[key-import] All parse attempts failed: {}", e);
+            "Failed to parse key. Please ensure the key is a valid OpenSSH private key.".to_string()
+        })
+}
+
+/// Fix OpenSSH private key padding that exceeds blocksize-1.
+/// Some generators pad to the next block boundary with more bytes than
+/// strict parsers expect. This function trims padding to exactly what's needed.
+fn fix_openssh_padding(pem: &str) -> Result<String, String> {
+    // Extract base64 body
+    let lines: Vec<&str> = pem.lines().collect();
+    if lines.len() < 3 {
+        return Err("Invalid PEM structure".to_string());
+    }
+    let header = lines[0];
+    let footer = lines[lines.len() - 1];
+    let body: String = lines[1..lines.len() - 1].concat();
+
+    let mut data = base64::engine::general_purpose::STANDARD.decode(&body)
+        .map_err(|e| format!("Base64 decode failed: {}", e))?;
+
+    // Verify magic
+    if data.len() < 15 || &data[0..15] != b"openssh-key-v1\0" {
+        return Err("Not a valid OpenSSH key".to_string());
+    }
+
+    let mut o: usize = 15;
+
+    // Helper to read u32 BE
+    fn read_u32(data: &[u8], offset: usize) -> Result<(u32, usize), String> {
+        if offset + 4 > data.len() {
+            return Err("Unexpected end of key data".to_string());
+        }
+        let val = u32::from_be_bytes([data[offset], data[offset+1], data[offset+2], data[offset+3]]);
+        Ok((val, offset + 4))
+    }
+
+    // Skip string (read len, skip len bytes)
+    fn skip_str(data: &[u8], offset: usize) -> Result<usize, String> {
+        let (len, next) = read_u32(data, offset)?;
+        let end = next + len as usize;
+        if end > data.len() {
+            return Err("String extends beyond key data".to_string());
+        }
+        Ok(end)
+    }
+
+    // Skip cipher, kdf, kdf_options
+    o = skip_str(&data, o)?;
+    o = skip_str(&data, o)?;
+    o = skip_str(&data, o)?;
+
+    // nkeys
+    let (nkeys, next) = read_u32(&data, o)?;
+    o = next;
+    if nkeys != 1 {
+        return Err(format!("Expected 1 key, found {}", nkeys));
+    }
+
+    // Skip public key blob
+    o = skip_str(&data, o)?;
+
+    // Private section length
+    let (priv_len, priv_start) = read_u32(&data, o)?;
+    let priv_section_start = priv_start;
+    let priv_section_end = priv_start + priv_len as usize;
+
+    if priv_section_end > data.len() {
+        return Err("Private section extends beyond key data".to_string());
+    }
+
+    // Parse inside private section to find where content ends and padding begins
+    let mut p = priv_section_start;
+
+    // checkint1, checkint2
+    let (_, next) = read_u32(&data, p)?; p = next;
+    let (_, next) = read_u32(&data, p)?; p = next;
+
+    // key type string
+    p = skip_str(&data, p)?;
+    // public key
+    p = skip_str(&data, p)?;
+    // private key (for ed25519 this is 64 bytes as a string)
+    p = skip_str(&data, p)?;
+    // comment
+    p = skip_str(&data, p)?;
+
+    let content_len = p - priv_section_start;
+    let block_size: usize = 8; // "none" cipher uses block size 8
+    let padded_len = ((content_len + block_size - 1) / block_size) * block_size;
+    let correct_padding = padded_len - content_len;
+
+    log::info!("[key-import] Content: {} bytes, needs {} padding bytes (was {})",
+        content_len, correct_padding, priv_len as usize - content_len);
+
+    // Rebuild with correct padding
+    let new_priv_len = (content_len + correct_padding) as u32;
+
+    // Write new private section length
+    let len_offset = priv_section_start - 4;
+    data[len_offset] = (new_priv_len >> 24) as u8;
+    data[len_offset + 1] = (new_priv_len >> 16) as u8;
+    data[len_offset + 2] = (new_priv_len >> 8) as u8;
+    data[len_offset + 3] = new_priv_len as u8;
+
+    // Write correct padding bytes (1, 2, 3, ...)
+    let new_end = priv_section_start + content_len + correct_padding;
+    for i in 0..correct_padding {
+        if priv_section_start + content_len + i < data.len() {
+            data[priv_section_start + content_len + i] = (i + 1) as u8;
+        }
+    }
+
+    // Truncate data to new end
+    data.truncate(new_end);
+
+    // Re-encode to PEM
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&data);
+    let mut result = String::with_capacity(encoded.len() + 80);
+    result.push_str(header);
+    result.push('\n');
+    for chunk in encoded.as_bytes().chunks(70) {
+        result.push_str(std::str::from_utf8(chunk).unwrap_or(""));
+        result.push('\n');
+    }
+    result.push_str(footer);
+
+    Ok(result)
+}
+
+/// Re-wraps PEM base64 body to 70-char lines if it's not already wrapped.
+/// Some tools or copy-paste operations produce keys with the entire base64
+/// payload on a single line, which the ssh_key crate rejects.
+fn normalize_pem_wrapping(pem: &str) -> String {
+    let lines: Vec<&str> = pem.lines().collect();
+    
+    // Need at least header + body + footer
+    if lines.len() < 3 {
+        return pem.to_string();
+    }
+
+    let header = lines[0];
+    let footer = lines[lines.len() - 1];
+
+    // Check if it looks like a PEM structure
+    if !header.starts_with("-----BEGIN ") || !footer.starts_with("-----END ") {
+        return pem.to_string();
+    }
+
+    // Extract the base64 body (everything between header and footer)
+    let body_lines = &lines[1..lines.len() - 1];
+    
+    // If any body line exceeds 76 chars, it needs re-wrapping
+    let needs_rewrap = body_lines.iter().any(|line| line.len() > 76);
+    
+    if !needs_rewrap {
+        return pem.to_string();
+    }
+
+    log::info!("[key-import] Re-wrapping base64 body to 70-char lines");
+
+    // Concatenate all body lines and re-wrap at 70 chars
+    let body: String = body_lines.concat();
+    let mut result = String::with_capacity(pem.len() + body.len() / 70);
+    result.push_str(header);
+    result.push('\n');
+
+    for chunk in body.as_bytes().chunks(70) {
+        result.push_str(std::str::from_utf8(chunk).unwrap_or(""));
+        result.push('\n');
+    }
+
+    result.push_str(footer);
+    result
 }
 
 #[tauri::command]
@@ -126,6 +321,8 @@ pub async fn import_key(name: String, key_data: String, state: State<'_, AppStat
         ssh_key::Algorithm::Ecdsa { .. } => "ecdsa",
         _ => "unknown",
     };
+    
+    log::info!("[key-import] Imported {} key: {}", key_type, name);
     
     // Encrypt the private key before storing
     let encrypted_key_data = encrypt_key_data(&state.vault, &normalized_key)?;
