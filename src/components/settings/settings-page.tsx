@@ -103,20 +103,10 @@ export function SettingsPage() {
         }
       }
     } catch (e) {
-      const errorStr = String(e);
-      if (
-        errorStr.includes("did not respond") ||
-        errorStr.includes("Could not fetch") ||
-        errorStr.includes("no releases") ||
-        errorStr.includes("204") ||
-        errorStr.includes("Not Found") ||
-        errorStr.includes("Failed to fetch")
-      ) {
-        setUpdateInfo(null);
-      } else {
-        console.error("Update check failed:", e);
-        setError(errorStr);
-      }
+      // Any error from check() means the endpoint is unreachable or has no valid release.
+      // This is expected when no stable release exists yet, or the dev endpoint isn't set up.
+      console.warn("Update check:", String(e));
+      setUpdateInfo(null);
     } finally {
       setChecking(false);
     }
@@ -324,7 +314,11 @@ export function SettingsPage() {
         ) : (
           <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "var(--success)", fontSize: "13px" }}>
             <Check size={14} />
-            <span>You're on the latest version</span>
+            <span>
+              {channel === "stable"
+                ? "No stable release available yet — you're on a dev build"
+                : "You're on the latest dev build"}
+            </span>
           </div>
         )}
 
