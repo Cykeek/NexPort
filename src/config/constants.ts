@@ -52,3 +52,40 @@ export const TERMINAL_THEME = {
   brightCyan: "#94e2d5",
   brightWhite: "#ffffff",
 } as const;
+
+/* ─── Appearance Customization ─────────────────────────────────────────── */
+
+/** Curated list of monospace font options available in the appearance settings. */
+export const AVAILABLE_FONTS = [
+  "Fira Code",
+  "JetBrains Mono",
+  "Cascadia Code",
+  "Consolas",
+  "Source Code Pro",
+  "Courier New",
+] as const;
+
+/** Font size boundaries (pixels). */
+export const FONT_SIZE_MIN = 8;
+export const FONT_SIZE_MAX = 32;
+
+/** localStorage key used to persist appearance preferences. */
+export const LOCALSTORAGE_KEY = "nexport-appearance" as const;
+
+/** Available font weight options for the terminal. */
+export const AVAILABLE_FONT_WEIGHTS = [
+  { value: 300, label: "Light" },
+  { value: 400, label: "Normal" },
+  { value: 500, label: "Medium" },
+  { value: 600, label: "SemiBold" },
+  { value: 700, label: "Bold" },
+] as const;
+
+/** Default appearance preferences applied when no saved state exists or values are invalid. */
+export const DEFAULT_PREFERENCES = {
+  fontFamily: "Fira Code",
+  fontSize: 14,
+  fontWeight: 400,
+  themeName: "default-dark",
+  uiThemingEnabled: false,
+} as const;

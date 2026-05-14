@@ -1,0 +1,32 @@
+/* Bundled monospace fonts for NexPort terminal */
+/* All fonts are under SIL Open Font License */
+
+/* Fira Code */
+@font-face { font-family: "Fira Code"; src: url("./FiraCode-Light.woff2") format("woff2"); font-weight: 300; font-style: normal; font-display: swap; }
+@font-face { font-family: "Fira Code"; src: url("./FiraCode-Regular.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Fira Code"; src: url("./FiraCode-Medium.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: "Fira Code"; src: url("./FiraCode-SemiBold.woff2") format("woff2"); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: "Fira Code"; src: url("./FiraCode-Bold.woff2") format("woff2"); font-weight: 700; font-style: normal; font-display: swap; }
+
+/* JetBrains Mono */
+@font-face { font-family: "JetBrains Mono"; src: url("./JetBrainsMono-Light.woff2") format("woff2"); font-weight: 300; font-style: normal; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("./JetBrainsMono-Regular.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("./JetBrainsMono-Medium.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("./JetBrainsMono-SemiBold.woff2") format("woff2"); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("./JetBrainsMono-Bold.woff2") format("woff2"); font-weight: 700; font-style: normal; font-display: swap; }
+
+/* Cascadia Code */
+@font-face { font-family: "Cascadia Code"; src: url("./CascadiaCode-Light.woff2") format("woff2"); font-weight: 300; font-style: normal; font-display: swap; }
+@font-face { font-family: "Cascadia Code"; src: url("./CascadiaCode-Regular.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Cascadia Code"; src: url("./CascadiaCode-SemiBold.woff2") format("woff2"); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: "Cascadia Code"; src: url("./CascadiaCode-Bold.woff2") format("woff2"); font-weight: 700; font-style: normal; font-display: swap; }
+
+/* Source Code Pro */
+@font-face { font-family: "Source Code Pro"; src: url("./SourceCodePro-Light.woff2") format("woff2"); font-weight: 300; font-style: normal; font-display: swap; }
+@font-face { font-family: "Source Code Pro"; src: url("./SourceCodePro-Regular.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Source Code Pro"; src: url("./SourceCodePro-Medium.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: "Source Code Pro"; src: url("./SourceCodePro-SemiBold.woff2") format("woff2"); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: "Source Code Pro"; src: url("./SourceCodePro-Bold.woff2") format("woff2"); font-weight: 700; font-style: normal; font-display: swap; }
+
+/* Note: "Consolas" and "Courier New" are system fonts available on all
+   Windows/macOS/Linux installations and don't need bundling. */

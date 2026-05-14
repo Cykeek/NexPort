@@ -35,10 +35,11 @@ src-tauri/gen/
 *.tsbuildinfo
 next-env.d.ts
 
-# Kilocode
+# Agents
 .kilocode/
 .opencode/
 .kilo/
+.kiro/
 
 # Qwen
 .qwen/

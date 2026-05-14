@@ -6,6 +6,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-shell";
 import { Download, RefreshCw, Check, ChevronDown, ExternalLink, Zap } from "lucide-react";
+import { AppearanceSection } from "./appearance-section";
 
 type UpdateChannel = "stable" | "dev";
 
@@ -82,18 +83,16 @@ export function SettingsPage() {
       } else {
         // Dev channel: fetch manifest via Rust backend (bypasses webview CSP/CORS)
         const responseText = await invoke<string>("fetch_url", { url: CHANNEL_ENDPOINTS.dev });
-        console.log("[updater] Dev manifest:", responseText.substring(0, 200));
         const manifest = JSON.parse(responseText);
 
         // Check if the manifest has platform data (actual assets)
         const hasPlatforms = manifest.platforms && Object.keys(manifest.platforms).length > 0;
-        console.log("[updater] Has platforms:", hasPlatforms);
         if (!hasPlatforms) {
           setUpdateStatus("no-packages");
           return;
         }
 
-        const currentVersion = "0.2.1-alpha";
+        const currentVersion = "0.3.0-beta";
         if (manifest.version && manifest.version !== currentVersion) {
           setUpdateInfo({
             version: manifest.version,
@@ -138,7 +137,7 @@ export function SettingsPage() {
       <div className="settings-section">
         <div className="settings-section-header">
           <span className="settings-section-title">About</span>
-          <span className="settings-section-badge">v0.2.1-alpha</span>
+          <span className="settings-section-badge">v0.3.0-beta</span>
         </div>
 
         <div className="settings-row">
@@ -168,7 +167,7 @@ export function SettingsPage() {
               <span className="settings-row-desc">Current installed version</span>
             </div>
           </div>
-          <span className="settings-row-value">0.2.1-alpha</span>
+          <span className="settings-row-value">0.3.0-beta</span>
         </div>
 
         <div className="settings-row">
@@ -285,6 +284,8 @@ export function SettingsPage() {
           </div>
         </div>
       </div>
+
+      <AppearanceSection />
     </div>
   );
 }

@@ -9,9 +9,10 @@ import { X, Plus, Minus, Square } from "lucide-react";
 import { useWindowControls } from "@/hooks/use-window-controls";
 import {
   TERMINAL_CONFIG,
-  TERMINAL_THEME,
   SSH_DEFAULTS,
 } from "@/config/constants";
+import { useAppearanceStore } from "@/stores/appearance-store";
+import { getThemeByName } from "@/config/themes";
 import { sshApi, connectionApi } from "@/lib/tauri-api";
 
 interface TerminalTab {
@@ -53,6 +54,33 @@ export default function TerminalPage() {
   const fitAddonsRef = useRef<Map<string, FitAddon>>(new Map());
   const pollingRef = useRef<Set<string>>(new Set());
   const { handleMinimize, handleMaximize, handleClose: winClose, dragRef } = useWindowControls();
+
+  // Subscribe to appearance store for live terminal customization
+  const { fontFamily, fontSize, fontWeight, themeName, uiThemingEnabled } = useAppearanceStore();
+
+  // Derive terminal window chrome colors from theme when UI theming is enabled
+  const currentThemeForUI = getThemeByName(themeName);
+  const ui = uiThemingEnabled
+    ? {
+        bg: currentThemeForUI.ui.bg,
+        bgElevated: currentThemeForUI.ui.bgElevated,
+        bgSurface: currentThemeForUI.ui.bgSurface,
+        border: currentThemeForUI.ui.border,
+        text: currentThemeForUI.colors.foreground,
+        textMuted: currentThemeForUI.colors.brightBlack,
+        accent: currentThemeForUI.ui.accent,
+        tabActive: currentThemeForUI.ui.bgSurface,
+      }
+    : {
+        bg: "#08080d",
+        bgElevated: "#1a1a24",
+        bgSurface: "#1a1a24",
+        border: "#333",
+        text: "#c4c6d0",
+        textMuted: "#888",
+        accent: "#3b82f6",
+        tabActive: "#333",
+      };
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -97,7 +125,6 @@ export default function TerminalPage() {
       if (connectionId) {
         sshApi.detectOs(connectionId)
           .then((os) => {
-            console.log("Detected OS:", os);
             if (os && os !== "unknown") {
               connectionApi.updateOs(connectionId, os)
                 .then(() => {
@@ -105,7 +132,7 @@ export default function TerminalPage() {
                 });
             }
           })
-          .catch((e) => console.error("OS detection failed:", e));
+          .catch(() => {});
       }
 
       const tab: TerminalTab = {
@@ -153,31 +180,18 @@ export default function TerminalPage() {
     const container = document.getElementById(`terminal-${tab.id}`);
     if (!container || terminalsRef.current.has(tab.id)) return;
 
+    // Use current appearance store values for initial terminal creation
+    const state = useAppearanceStore.getState();
+    const currentTheme = getThemeByName(state.themeName);
+
     const term = new XTerm({
       cursorBlink: true,
-      fontSize: TERMINAL_CONFIG.fontSize,
-      fontFamily: TERMINAL_CONFIG.fontFamily,
+      fontSize: state.fontSize,
+      fontWeight: state.fontWeight as any,
+      fontFamily: `"${state.fontFamily}", "Consolas", "Courier New", monospace`,
       theme: {
-        background: TERMINAL_THEME.background,
-        foreground: TERMINAL_THEME.foreground,
-        cursor: TERMINAL_THEME.cursor,
-        selectionBackground: TERMINAL_THEME.selectionBackground,
-        black: TERMINAL_THEME.black,
-        red: TERMINAL_THEME.red,
-        green: TERMINAL_THEME.green,
-        yellow: TERMINAL_THEME.yellow,
-        blue: TERMINAL_THEME.blue,
-        magenta: TERMINAL_THEME.magenta,
-        cyan: TERMINAL_THEME.cyan,
-        white: TERMINAL_THEME.white,
-        brightBlack: TERMINAL_THEME.brightBlack,
-        brightRed: TERMINAL_THEME.brightRed,
-        brightGreen: TERMINAL_THEME.brightGreen,
-        brightYellow: TERMINAL_THEME.brightYellow,
-        brightBlue: TERMINAL_THEME.brightBlue,
-        brightMagenta: TERMINAL_THEME.brightMagenta,
-        brightCyan: TERMINAL_THEME.brightCyan,
-        brightWhite: TERMINAL_THEME.brightWhite,
+        ...currentTheme.colors,
+        background: currentTheme.colors.background,
       },
       scrollback: TERMINAL_CONFIG.scrollback,
       allowProposedApi: true,
@@ -217,7 +231,6 @@ export default function TerminalPage() {
         
         // Check for EOF signal from backend
         if (data === "__EOF__") {
-          console.log("Connection closed (EOF received), closing terminal");
           handleConnectionLost(tab, term);
           return;
         }
@@ -241,7 +254,6 @@ export default function TerminalPage() {
           errorStr.includes("disconnected");
         
         if (isConnectionError) {
-          console.log("Connection lost, closing terminal...", String(e));
           handleConnectionLost(tab, term);
           return;
         }
@@ -268,6 +280,55 @@ export default function TerminalPage() {
       }
     }
   }, [activeTabId, tabs, initTerminal]);
+
+  // Patch active terminal instances when appearance preferences change
+  useEffect(() => {
+    const theme = getThemeByName(themeName);
+
+    terminalsRef.current.forEach((term, tabId) => {
+      term.options.fontFamily = `"${fontFamily}", "Consolas", "Courier New", monospace`;
+      term.options.fontSize = fontSize;
+      term.options.fontWeight = fontWeight as any;
+      term.options.theme = {
+        ...theme.colors,
+        background: theme.colors.background,
+      };
+      // Refit immediately — xterm handles font metric recalculation internally
+      const fitAddon = fitAddonsRef.current.get(tabId);
+      if (fitAddon) fitAddon.fit();
+    });
+  }, [fontFamily, fontSize, fontWeight, themeName, uiThemingEnabled]);
+
+  // Listen for appearance changes from the main window via Tauri events
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let mounted = true;
+
+    (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        if (!mounted) return;
+        unlisten = await listen<string>("appearance-changed", (event) => {
+          try {
+            const prefs = JSON.parse(event.payload);
+            // Directly update store state without re-persisting (avoids loop)
+            useAppearanceStore.setState({
+              ...(prefs.fontFamily && { fontFamily: prefs.fontFamily }),
+              ...(prefs.fontSize && { fontSize: prefs.fontSize }),
+              ...(prefs.fontWeight && { fontWeight: prefs.fontWeight }),
+              ...(prefs.themeName && { themeName: prefs.themeName }),
+              ...(prefs.uiThemingEnabled !== undefined && { uiThemingEnabled: prefs.uiThemingEnabled }),
+            });
+          } catch {}
+        });
+      } catch {}
+    })();
+
+    return () => {
+      mounted = false;
+      if (unlisten) unlisten();
+    };
+  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -355,15 +416,15 @@ export default function TerminalPage() {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#08080d" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: ui.bg }}>
       <div
         ref={dragRef}
         style={{
           display: "flex",
           alignItems: "center",
           padding: "8px",
-          background: "#1a1a24",
-          borderBottom: "1px solid #333",
+          background: ui.bgElevated,
+          borderBottom: `1px solid ${ui.border}`,
           cursor: "grab",
         }}
       >
@@ -380,10 +441,10 @@ export default function TerminalPage() {
                 alignItems: "center",
                 gap: "8px",
                 padding: "6px 12px",
-                background: activeTabId === tab.id ? "#333" : "transparent",
+                background: activeTabId === tab.id ? ui.tabActive : "transparent",
                 borderRadius: "4px",
                 cursor: "pointer",
-                color: "#c4c6d0",
+                color: ui.text,
                 fontSize: "12px",
                 userSelect: "none",
               }}
@@ -399,7 +460,7 @@ export default function TerminalPage() {
                   background: "transparent",
                   border: "none",
                   cursor: "pointer",
-                  color: "#888",
+                  color: ui.textMuted,
                   padding: "4px",
                   display: "flex",
                   alignItems: "center",
@@ -410,7 +471,7 @@ export default function TerminalPage() {
                   e.currentTarget.style.background = "rgba(255,255,255,0.1)";
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.color = "#888";
+                  e.currentTarget.style.color = ui.textMuted;
                   e.currentTarget.style.background = "transparent";
                 }}
               >
@@ -431,7 +492,7 @@ export default function TerminalPage() {
               border: "none",
               borderRadius: "4px",
               cursor: "pointer",
-              color: "#888",
+              color: ui.textMuted,
             }}
           >
             <Plus size={14} />
@@ -443,21 +504,21 @@ export default function TerminalPage() {
           <button
             onClick={handleMinimize}
             onMouseDown={(e) => e.stopPropagation()}
-            style={{ background: "transparent", border: "none", cursor: "pointer", color: "#888", padding: "4px", display: "flex", alignItems: "center" }}
+            style={{ background: "transparent", border: "none", cursor: "pointer", color: ui.textMuted, padding: "4px", display: "flex", alignItems: "center" }}
           >
             <Minus size={14} />
           </button>
           <button
             onClick={handleMaximize}
             onMouseDown={(e) => e.stopPropagation()}
-            style={{ background: "transparent", border: "none", cursor: "pointer", color: "#888", padding: "4px", display: "flex", alignItems: "center" }}
+            style={{ background: "transparent", border: "none", cursor: "pointer", color: ui.textMuted, padding: "4px", display: "flex", alignItems: "center" }}
           >
             <Square size={12} />
           </button>
           <button
             onClick={handleClose}
             onMouseDown={(e) => e.stopPropagation()}
-            style={{ background: "transparent", border: "none", cursor: "pointer", color: "#888", padding: "4px", display: "flex", alignItems: "center" }}
+            style={{ background: "transparent", border: "none", cursor: "pointer", color: ui.textMuted, padding: "4px", display: "flex", alignItems: "center" }}
           >
             <X size={14} />
           </button>
