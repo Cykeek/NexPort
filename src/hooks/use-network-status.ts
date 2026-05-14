@@ -10,8 +10,9 @@ interface NetworkStatus {
 }
 
 export function useNetworkStatus() {
+  const [mounted, setMounted] = useState(false);
   const [status, setStatus] = useState<NetworkStatus>({
-    online: typeof navigator !== "undefined" ? navigator.onLine : true,
+    online: true,
     ip: null,
     download: "—",
     upload: "—",
@@ -30,6 +31,10 @@ export function useNetworkStatus() {
   }, []);
 
   useEffect(() => {
+    // Set actual online status after mount to avoid hydration mismatch
+    setMounted(true);
+    setStatus((prev) => ({ ...prev, online: navigator.onLine }));
+
     const handleOnline = () => {
       setStatus((prev) => ({ ...prev, online: true }));
       fetchIp();
@@ -98,7 +103,7 @@ export function useNetworkStatus() {
     };
   }, [fetchIp]);
 
-  return status;
+  return { ...status, mounted };
 }
 
 function formatSpeed(bytesPerSec: number): string {

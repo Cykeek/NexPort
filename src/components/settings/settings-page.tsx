@@ -93,7 +93,7 @@ export function SettingsPage() {
           return;
         }
 
-        const currentVersion = "0.2.0-alpha";
+        const currentVersion = "0.2.1-alpha";
         if (manifest.version && manifest.version !== currentVersion) {
           setUpdateInfo({
             version: manifest.version,
@@ -138,7 +138,7 @@ export function SettingsPage() {
       <div className="settings-section">
         <div className="settings-section-header">
           <span className="settings-section-title">About</span>
-          <span className="settings-section-badge">v0.2.0-alpha</span>
+          <span className="settings-section-badge">v0.2.1-alpha</span>
         </div>
 
         <div className="settings-row">
@@ -168,7 +168,7 @@ export function SettingsPage() {
               <span className="settings-row-desc">Current installed version</span>
             </div>
           </div>
-          <span className="settings-row-value">0.2.0-alpha</span>
+          <span className="settings-row-value">0.2.1-alpha</span>
         </div>
 
         <div className="settings-row">
