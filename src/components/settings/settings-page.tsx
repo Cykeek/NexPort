@@ -92,8 +92,25 @@ export function SettingsPage() {
           return;
         }
 
-        const currentVersion = "0.3.0-beta";
-        if (manifest.version && manifest.version !== currentVersion) {
+        // Get the actual installed app version from Tauri
+        const { getVersion } = await import("@tauri-apps/api/app");
+        const installedVersion = await getVersion();
+        
+        // The manifest version is like "0.3.1-dev.abc1234"
+        // The installed version is like "0.3.1" (from tauri.conf.json)
+        // Extract the commit hash from the manifest version
+        const devHashMatch = manifest.version?.match(/-dev\.([a-f0-9]+)$/);
+        const manifestHash = devHashMatch ? devHashMatch[1] : null;
+        const manifestBase = manifest.version?.replace(/-dev\..+$/, "") || "";
+        
+        // Check if this is a newer build:
+        // 1. Base version is higher than installed → definitely newer
+        // 2. Same base version but different commit hash → newer dev build
+        const lastDevHash = localStorage.getItem("nexport-last-dev-hash");
+        const isNewerBase = manifestBase !== installedVersion && manifestBase > installedVersion;
+        const isNewerDev = manifestBase === installedVersion && manifestHash && manifestHash !== lastDevHash;
+        
+        if (isNewerBase || isNewerDev) {
           setUpdateInfo({
             version: manifest.version,
             date: manifest.pub_date,
@@ -116,6 +133,13 @@ export function SettingsPage() {
   const downloadAndInstall = async () => {
     if (!update) {
       // Dev channel without auto-install — open GitHub releases page in default browser
+      // Save the current manifest hash so we know this build was downloaded
+      if (updateInfo?.version) {
+        const hashMatch = updateInfo.version.match(/-dev\.([a-f0-9]+)$/);
+        if (hashMatch) {
+          localStorage.setItem("nexport-last-dev-hash", hashMatch[1]);
+        }
+      }
       await open("https://github.com/Cykeek/NexPort/releases/tag/dev-latest");
       return;
     }
@@ -137,7 +161,7 @@ export function SettingsPage() {
       <div className="settings-section">
         <div className="settings-section-header">
           <span className="settings-section-title">About</span>
-          <span className="settings-section-badge">v0.3.0-beta</span>
+          <span className="settings-section-badge">v0.3.1-beta</span>
         </div>
 
         <div className="settings-row">
@@ -167,7 +191,7 @@ export function SettingsPage() {
               <span className="settings-row-desc">Current installed version</span>
             </div>
           </div>
-          <span className="settings-row-value">0.3.0-beta</span>
+          <span className="settings-row-value">0.3.1-beta</span>
         </div>
 
         <div className="settings-row">

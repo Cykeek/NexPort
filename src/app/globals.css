@@ -244,7 +244,7 @@ input::placeholder{color:var(--text-muted)}
 .font-size-stepper-input{width:36px;height:28px;text-align:center;font-size:12px;font-family:ui-monospace,monospace;color:var(--text);background:var(--bg-elevated);border:none;border-left:1px solid var(--border);border-right:1px solid var(--border)}
 
 /* Terminal Preview */
-.terminal-preview{padding:14px 16px;border-radius:var(--radius-md);border:1px solid var(--border);line-height:1.6;overflow:hidden;margin:8px 0}
+.terminal-preview{padding:16px;border-radius:var(--radius-md);border:1px solid var(--border);line-height:1.6;overflow:hidden;margin:14px 16px;border-bottom:none;border-radius:var(--radius-md)}
 .terminal-preview-line{white-space:pre;overflow:hidden;text-overflow:ellipsis}
 
 /* Font Family Section */

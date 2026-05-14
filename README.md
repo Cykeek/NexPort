@@ -1,16 +1,19 @@
 # NexPort
 
-A modern, cross-platform desktop SSH client built with Next.js and Tauri. NexPort provides a native-feeling terminal experience with integrated file transfer capabilities, encrypted credential storage, and a polished UI.
+A modern, cross-platform desktop SSH client built with Next.js and Tauri. NexPort provides a native-feeling terminal experience with encrypted credential storage, customizable appearance, and a polished UI.
 
 ## Features
 
 - **SSH Terminal Connections** — Connect to remote servers via password or key-based authentication using the `russh` library.
 - **Multiple Sessions** — Manage concurrent SSH sessions with a tabbed terminal interface powered by xterm.js.
-- **SFTP File Browser** — Browse remote file systems (stub implementation — under active development).
-- **SSH Key Manager** — Generate and import SSH keys for authentication.
-- **Custom Titlebar** — Frameless window with integrated window controls.
-- **Responsive Sidebar** — Searchable connection list with connection management.
-- **Encrypted Storage** — Credentials and keys are stored securely using AES-256-GCM encryption with Argon2 key derivation.
+- **SSH Key Manager** — Generate (ed25519, RSA) and import SSH keys with support for non-standard key formats.
+- **Appearance Customization** — Bundled monospace fonts, 5 color themes, font weight control, and UI theming for terminal windows.
+- **Auto-Updater** — Stable and dev update channels with signature verification.
+- **Custom Titlebar** — Frameless window with integrated window controls and drag region.
+- **Collapsible Sidebar** — Navigation with icon-only rail state.
+- **Network Status** — Real-time connectivity indicator with public IP display.
+- **Encrypted Storage** — Credentials and keys stored securely using AES-256-GCM encryption with Argon2 key derivation.
+- **Cross-Window Sync** — Appearance preferences sync live between main and terminal windows via Tauri events.
 
 ## Tech Stack
 
@@ -20,11 +23,10 @@ A modern, cross-platform desktop SSH client built with Next.js and Tauri. NexPor
 |---|---|---|
 | Next.js | 16 (App Router) | React framework |
 | React | 19 | UI library |
-| Tailwind CSS | v4 | Utility-first CSS |
-| shadcn/ui | base-nova style | Component library |
 | xterm.js | 6.x | Terminal emulator |
 | Zustand | 5.x | State management |
-| react-resizable-panels | 2.x | Resizable layouts |
+| Lucide React | Icons | UI icons |
+| Sonner | 2.x | Toast notifications |
 
 ### Backend
 
@@ -32,9 +34,9 @@ A modern, cross-platform desktop SSH client built with Next.js and Tauri. NexPor
 |---|---|
 | Rust (Tauri v2) | Desktop runtime and native backend |
 | russh | SSH protocol implementation |
-| russh-sftp | SFTP protocol support |
 | redb | Embedded key-value database |
 | aes-gcm / argon2 | Encryption and key derivation |
+| reqwest | HTTP client for update manifest fetching |
 | DashMap | Concurrent session storage |
 | tokio | Async runtime |
 
@@ -57,129 +59,81 @@ A modern, cross-platform desktop SSH client built with Next.js and Tauri. NexPor
 sudo apt update && sudo apt install -y build-essential libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libssl-dev pkg-config libglib2.0-dev libayatana-appindicator3-dev
 ```
 
-**Fedora:**
-```bash
-sudo dnf install -y gcc-c++ libwebkit2gtk4.1-devel gtk3-devel librsvg2-devel openssl-devel pkgconfig-pcm-glib-devel libappindicator-gtk3-devel
-```
-
-**Arch Linux:**
-```bash
-sudo pacman -Syu --needed base-devel webkit2gtk-4.1 gtk3 librsvg libssl pkgconf
-```
-
 See the [Tauri prerequisites guide](https://v2.tauri.app/start/prerequisites/) for full details.
 
 ## Getting Started
 
-### Quick Start (5 minutes)
-
-If you have Node.js and Rust installed, run these commands in your terminal:
+### Quick Start
 
 ```bash
-# 1. Clone the repository and navigate to it
+# Clone and navigate
 cd nexport
 
-# 2. Install dependencies
+# Install dependencies
 npm install
 
-# 3. Run the application
+# Run the application
 npm run tauri dev
 ```
 
-That's it! The application will open in a window. The first run takes a few minutes to compile Rust dependencies.
-
-### Install dependencies
-
-```bash
-npm install
-```
-
-This installs all required packages:
-- Next.js 16 (React framework)
-- Tauri CLI (desktop app builder)
-- xterm.js (terminal emulator)
-- Various UI components
-
-### Development
-
-Run the app in development mode with hot reload:
-
-```bash
-npm run tauri dev
-```
-
-This starts the Next.js dev server on `http://localhost:3000` and launches the Tauri window.
+The first run takes a few minutes to compile Rust dependencies.
 
 ### Production build
-
-Build a standalone desktop application:
 
 ```bash
 npm run tauri build
 ```
 
-Output files:
-- Windows EXE: `src-tauri/target/release/ssh-connect.exe`
-- MSI Installer: `src-tauri/target/release/bundle/msi/`
-- NSIS Installer: `src-tauri/target/release/bundle/nsis/`
-
-### Troubleshooting
-
-**"npm is not recognized"**
-- Install [Node.js](https://nodejs.org/) (v18 or higher)
-
-**"cargo is not recognized"**
-- Install [Rust](https://rustup.rs/)
-
-**"Visual Studio Build Tools not found"** (Windows)
-- Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
-- Select "Desktop development with C++" workload
+Output files are generated in `src-tauri/target/release/bundle/`.
 
 ## Project Structure
 
 ```
 nexport/
 ├── src/                          # Next.js frontend
-│   ├── app/                      # App Router (layout, page, globals.css)
+│   ├── app/                      # App Router (layout, page, terminal)
 │   ├── components/
-│   │   ├── layout/               # App shell, sidebar, titlebar, status bar
-│   │   ├── terminal/             # Terminal pane and tab components
-│   │   ├── connections/          # Connection dialog
-│   │   ├── sftp/                 # SFTP file browser (stub)
+│   │   ├── layout/               # App shell, sidebar, status bar
+│   │   ├── connections/          # Connection cards, dialogs
 │   │   ├── keys/                 # SSH key manager
-│   │   └── ui/                   # shadcn/ui primitives
+│   │   ├── settings/             # Settings page, appearance controls
+│   │   └── ui/                   # Error boundary
+│   ├── config/                   # Constants, theme definitions
+│   ├── fonts/                    # Bundled monospace fonts (woff2)
 │   ├── hooks/                    # Custom React hooks
-│   ├── lib/                      # Utilities (cn helper)
-│   ├── stores/                   # Zustand stores (connection, terminal, settings)
+│   ├── lib/                      # Utilities, Tauri API wrappers
+│   ├── stores/                   # Zustand stores (connection, appearance, keys)
 │   └── types/                    # TypeScript type definitions
 │
 ├── src-tauri/                    # Rust/Tauri backend
 │   ├── src/
 │   │   ├── commands/             # Tauri command handlers
 │   │   │   ├── ssh.rs            # SSH session commands
-│   │   │   ├── sftp.rs           # SFTP commands
 │   │   │   ├── connections.rs    # Connection CRUD
-│   │   │   └── keys.rs           # Key management
-│   │   ├── ssh/                  # SSH session and connection logic
-│   │   ├── vault/                # AES-GCM encryption utilities
-│   │   ├── state.rs              # App state (DashMap sessions + redb)
+│   │   │   ├── keys.rs           # Key management with padding fix
+│   │   │   └── utils.rs          # HTTP fetch utility
+│   │   ├── ssh/                  # SSH session, known hosts
+│   │   ├── vault/                # AES-GCM encryption
+│   │   ├── state.rs              # App state (DashMap + redb)
+│   │   ├── crypto.rs             # Encryption helpers
 │   │   ├── error.rs              # Error types
 │   │   ├── lib.rs                # Tauri app setup
 │   │   └── main.rs               # Entry point
+│   ├── .cargo/audit.toml         # Security advisory acknowledgements
 │   ├── capabilities/             # Tauri capability definitions
 │   ├── Cargo.toml
 │   └── tauri.conf.json           # Tauri configuration
 │
-├── public/                       # Static assets
-├── next.config.mjs               # Next.js configuration
-├── components.json               # shadcn/ui configuration
-├── tsconfig.json                 # TypeScript configuration
+├── .github/workflows/
+│   ├── build.yml                 # Dev branch CI (build + dev release)
+│   └── release.yml               # Main branch release workflow
+│
+├── next.config.mjs
+├── tsconfig.json
 └── package.json
 ```
 
 ## Architecture
-
-NexPort uses a split architecture:
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -193,16 +147,16 @@ NexPort uses a split architecture:
 │              IPC (invoke / emit)             │
 ├─────────────────────────────────────────────┤
 │              Tauri Backend (Rust)            │
-│  ┌────────┐  ┌────────┐  ┌───────────────┐  │
-│  │  russh │  │  redb  │  │   vault       │  │
-│  │  (SSH) │  │  (DB)  │  │  (AES-GCM)    │  │
-│  └────────┘  └────────┘  └───────────────┘  │
+│  ┌────────┐  ┌────────┐  ┌───────────────┐ │
+│  │  russh │  │  redb  │  │   vault       │ │
+│  │  (SSH) │  │  (DB)  │  │  (AES-GCM)   │ │
+│  └────────┘  └────────┘  └───────────────┘ │
 └─────────────────────────────────────────────┘
 ```
 
-- The **frontend** renders the UI using React components and manages local state with Zustand. Terminal rendering is handled by xterm.js.
-- The **backend** runs as a native Rust process via Tauri. It handles SSH connections (`russh`), persists data to an embedded `redb` database, and encrypts sensitive values using AES-256-GCM.
-- **Communication** between frontend and backend occurs over Tauri's IPC bridge (`invoke`/`emit`).
+- The **frontend** renders the UI and manages state with Zustand. Terminal rendering is handled by xterm.js in separate Tauri windows.
+- The **backend** handles SSH connections, persists data to `redb`, and encrypts sensitive values using AES-256-GCM.
+- **Communication** between frontend and backend occurs over Tauri's IPC bridge.
 
 ## Available Scripts
 
@@ -210,37 +164,23 @@ NexPort uses a split architecture:
 |---|---|
 | `npm run dev` | Start the Next.js dev server with Turbopack |
 | `npm run build` | Build the Next.js frontend for production |
-| `npm run start` | Start the production Next.js server |
-| `npm run lint` | Run the Next.js linter |
 | `npm run tauri dev` | Launch the full Tauri app in development mode |
 | `npm run tauri build` | Build the Tauri app for production |
 
-## Configuration
+## Auto-Updater
 
-### Tauri
+NexPort includes a built-in auto-updater with two channels:
 
-Application settings are defined in `src-tauri/tauri.conf.json`:
+- **Stable** — Checks `releases/latest/download/latest.json` (main branch releases)
+- **Dev** — Checks `releases/download/dev-latest/latest.json` (dev branch builds)
 
-- **Window**: 1200x800 default size, frameless (`decorations: false`)
-- **CSP**: Restricts resource loading to `self` with inline styles allowed
-- **Bundling**: All supported targets enabled
-
-### Frontend
-
-- **shadcn/ui** is configured via `components.json` using the `base-nova` style
-- **Tailwind CSS v4** is configured in `src/app/globals.css`
-- **State** is managed across three Zustand stores in `src/stores/`
-
-### Backend
-
-- **Capabilities** are defined in `src-tauri/capabilities/default.json`
-- **Plugins**: `tauri-plugin-fs`, `tauri-plugin-dialog`, `tauri-plugin-shell`, `tauri-plugin-store`, `tauri-plugin-log`
+Updates are signed with a private key and verified before installation.
 
 ## Known Limitations
 
-- **SFTP File Browser** — Currently a stub. The UI is scaffolded but file operations are not yet implemented.
-- **Host Key Verification** — Uses Trust On First Use (TOFU). On first connection, the host key is accepted automatically. Subsequent connections verify against the stored key, but there is no interactive verification prompt.
-- **Platform Support** — Tauri v2 targets Windows, macOS, and Linux, but the project has primarily been tested on Windows.
+- **SFTP** — Not yet implemented.
+- **Host Key Verification** — Uses Trust On First Use (TOFU). First connection accepts the key automatically; subsequent connections verify against stored keys.
+- **Platform Testing** — Primarily tested on Windows. macOS and Linux builds are generated by CI but less thoroughly tested.
 
 ## License
 

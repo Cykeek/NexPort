@@ -101,7 +101,7 @@ jobs:
         id: version
         shell: bash
         run: |
-          VERSION=$(node -p "require('./package.json').version")
+          VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Download artifacts
@@ -169,7 +169,13 @@ jobs:
           echo "=== latest.json ==="
           cat release-files/latest.json
 
-      - name: Create/Update Dev Release
+      - name: Delete existing dev release
+        run: |
+          gh release delete dev-latest --yes --cleanup-tag 2>/dev/null || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Dev Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: dev-latest
