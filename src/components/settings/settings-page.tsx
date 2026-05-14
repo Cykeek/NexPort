@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import { check, Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-shell";
 import { Download, RefreshCw, Check, ChevronDown, ExternalLink, Zap } from "lucide-react";
 
 type UpdateChannel = "stable" | "dev";
@@ -31,6 +33,8 @@ export function SettingsPage() {
   const [update, setUpdate] = useState<Update | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
+  const [updateStatus, setUpdateStatus] = useState<"checking" | "available" | "up-to-date" | "no-packages">("checking");
+
   useEffect(() => {
     checkForUpdates(channel);
   }, []);
@@ -41,6 +45,7 @@ export function SettingsPage() {
     localStorage.setItem("update-channel", newChannel);
     setUpdateInfo(null);
     setUpdate(null);
+    setUpdateStatus("checking");
     checkForUpdates(newChannel);
   };
 
@@ -49,24 +54,45 @@ export function SettingsPage() {
     setChecking(true);
     setUpdateInfo(null);
     setUpdate(null);
+    setUpdateStatus("checking");
 
     try {
       if (activeChannel === "stable") {
-        const result = await check({ timeout: 10 });
-        if (result) {
-          setUpdate(result);
-          setUpdateInfo({
-            version: result.version,
-            date: result.date,
-            body: result.body || undefined,
-          });
+        // First check if the stable manifest exists and has assets
+        try {
+          const responseText = await invoke<string>("fetch_url", { url: CHANNEL_ENDPOINTS.stable });
+          const manifest = JSON.parse(responseText);
+          const hasPlatforms = manifest.platforms && Object.keys(manifest.platforms).length > 0;
+          if (!hasPlatforms) {
+            setUpdateStatus("no-packages");
+            return;
+          }
+          // Manifest exists with assets — now use Tauri's check() for proper version comparison + install
+          const result = await check({ timeout: 10 });
+          if (result) {
+            setUpdate(result);
+            setUpdateInfo({ version: result.version, date: result.date, body: result.body || undefined });
+            setUpdateStatus("available");
+          } else {
+            setUpdateStatus("up-to-date");
+          }
+        } catch {
+          setUpdateStatus("no-packages");
         }
       } else {
-        // Dev channel: fetch manifest manually since Tauri's check() always
-        // uses the endpoint from tauri.conf.json (stable).
-        const response = await fetch(CHANNEL_ENDPOINTS.dev);
-        if (!response.ok) { setUpdateInfo(null); return; }
-        const manifest = await response.json();
+        // Dev channel: fetch manifest via Rust backend (bypasses webview CSP/CORS)
+        const responseText = await invoke<string>("fetch_url", { url: CHANNEL_ENDPOINTS.dev });
+        console.log("[updater] Dev manifest:", responseText.substring(0, 200));
+        const manifest = JSON.parse(responseText);
+
+        // Check if the manifest has platform data (actual assets)
+        const hasPlatforms = manifest.platforms && Object.keys(manifest.platforms).length > 0;
+        console.log("[updater] Has platforms:", hasPlatforms);
+        if (!hasPlatforms) {
+          setUpdateStatus("no-packages");
+          return;
+        }
+
         const currentVersion = "0.2.0-alpha";
         if (manifest.version && manifest.version !== currentVersion) {
           setUpdateInfo({
@@ -74,13 +100,15 @@ export function SettingsPage() {
             date: manifest.pub_date,
             body: manifest.notes || "Dev build available",
           });
-          // No auto-install for dev channel — user downloads from GitHub
           setUpdate(null);
+          setUpdateStatus("available");
+        } else {
+          setUpdateStatus("up-to-date");
         }
       }
     } catch (e) {
-      console.warn("Update check:", String(e));
-      setUpdateInfo(null);
+      console.warn("[updater] Update check error:", String(e));
+      setUpdateStatus("no-packages");
     } finally {
       setChecking(false);
     }
@@ -88,7 +116,8 @@ export function SettingsPage() {
 
   const downloadAndInstall = async () => {
     if (!update) {
-      window.open("https://github.com/Cykeek/NexPort/releases/tag/dev-latest", "_blank");
+      // Dev channel without auto-install — open GitHub releases page in default browser
+      await open("https://github.com/Cykeek/NexPort/releases/tag/dev-latest");
       return;
     }
     setDownloading(true);
@@ -199,11 +228,11 @@ export function SettingsPage() {
               <span className="settings-row-desc">
                 {checking
                   ? "Checking..."
-                  : updateInfo
-                    ? `Update available: ${updateInfo.version}`
-                    : channel === "stable"
-                      ? "No stable release yet — you're on a dev build"
-                      : "You're on the latest dev build"}
+                  : updateStatus === "available"
+                    ? `Update available: ${updateInfo?.version}`
+                    : updateStatus === "no-packages"
+                      ? "No release packages found"
+                      : "Already updated"}
               </span>
             </div>
           </div>
@@ -232,16 +261,20 @@ export function SettingsPage() {
               <span className="settings-row-desc">Current update status</span>
             </div>
           </div>
-          <div className="settings-status-indicator">
+          <div className="settings-status-indicator" style={{ color: updateStatus === "no-packages" ? "var(--text-muted)" : updateStatus === "available" ? "var(--accent)" : "var(--success)" }}>
             {checking ? (
               <>
                 <RefreshCw size={12} className="settings-spin" />
                 <span>Checking</span>
               </>
-            ) : updateInfo ? (
+            ) : updateStatus === "available" ? (
               <>
                 <Download size={12} />
                 <span>Update ready</span>
+              </>
+            ) : updateStatus === "no-packages" ? (
+              <>
+                <span>No packages</span>
               </>
             ) : (
               <>
