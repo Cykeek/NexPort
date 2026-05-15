@@ -96,6 +96,9 @@ export function SettingsPage() {
         const { getVersion } = await import("@tauri-apps/api/app");
         const installedVersion = await getVersion();
         
+        // Get the commit hash this binary was built from (embedded at compile time)
+        const buildCommit = await invoke<string>("get_build_commit");
+        
         // The manifest version is like "0.3.1-dev.abc1234"
         // The installed version is like "0.3.1" (from tauri.conf.json)
         // Extract the commit hash from the manifest version
@@ -105,10 +108,12 @@ export function SettingsPage() {
         
         // Check if this is a newer build:
         // 1. Base version is higher than installed → definitely newer
-        // 2. Same base version but different commit hash → newer dev build
-        const lastDevHash = localStorage.getItem("nexport-last-dev-hash");
+        // 2. Same base version but different commit hash from what we're running → newer dev build
+        //    Compare against the compile-time build commit (reliable) first,
+        //    then fall back to localStorage for builds that predate the embedded hash.
+        const knownCommit = buildCommit && buildCommit !== "unknown" ? buildCommit : localStorage.getItem("nexport-last-dev-hash");
         const isNewerBase = manifestBase !== installedVersion && manifestBase > installedVersion;
-        const isNewerDev = manifestBase === installedVersion && manifestHash && manifestHash !== lastDevHash;
+        const isNewerDev = manifestBase === installedVersion && manifestHash && manifestHash !== knownCommit;
         
         if (isNewerBase || isNewerDev) {
           setUpdateInfo({

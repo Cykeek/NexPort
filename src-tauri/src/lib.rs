@@ -66,6 +66,7 @@ pub fn run() {
             commands::keys::update_key_with_new_key,
             commands::keys::get_key_data,
             commands::utils::fetch_url,
+            commands::utils::get_build_commit,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {
