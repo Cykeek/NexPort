@@ -105,8 +105,8 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
         (async () => {
           await semaphore.acquire();
           try {
-            const status = await connectionApi.checkHostStatus(conn.host, conn.port);
-            newStatuses[conn.id] = status;
+            const result = await connectionApi.checkHostStatus(conn.host, conn.port);
+            newStatuses[conn.id] = result.status;
           } catch {
             newStatuses[conn.id] = "unknown";
           } finally {

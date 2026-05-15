@@ -123,7 +123,7 @@ export function ConnectionDialog({ open, onOpenChange, editConnection, onSuccess
                 <div className="form-group">
                   <label className="form-label">Select Key</label>
                   {keys.length === 0 ? (
-                    <div className="form-input" style={{ padding: "8px 12px", color: "var(--text-muted)", fontSize: "13px" }}>
+                    <div className="form-input form-empty-text">
                       No keys saved. Go to Keys section to add a key.
                     </div>
                   ) : (

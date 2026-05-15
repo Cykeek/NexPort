@@ -25,8 +25,7 @@ export function DeleteConfirmDialog({ connection, onConfirm, onCancel }: DeleteC
               Cancel
             </button>
             <button
-              className="btn-primary"
-              style={{ background: "var(--danger)" }}
+              className="btn-danger"
               onClick={onConfirm}
             >
               Delete

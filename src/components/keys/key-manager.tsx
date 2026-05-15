@@ -5,6 +5,7 @@ import { Key, Trash2, Copy, Upload, Pencil, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { KeyActionDialog } from "./key-action-dialog";
 import { useKeyStore, KeyInfo } from "@/stores/key-store";
+import BorderGlow from "@/components/ui/BorderGlow";
 
 interface GenerateKeyDialogProps {
   onClose: () => void;
@@ -157,7 +158,7 @@ export function KeyManager() {
           <button className="btn-secondary" onClick={openGenerateDialog}>
             <Plus size={14} /> Generate
           </button>
-          <button className="btn-secondary" onClick={openImportDialog}>
+          <button className="btn-primary" onClick={openImportDialog}>
             <Upload size={14} /> Import
           </button>
         </div>
@@ -172,31 +173,56 @@ export function KeyManager() {
       ) : (
         <div className="keys-grid">
           {keys.map((key) => (
-            <div key={key.id} className="key-card">
-              <div className="key-card-header">
-                <div className="key-card-icon">
-                  <Key size={18} />
+            <BorderGlow
+              key={key.id}
+              borderRadius={22}
+              glowRadius={20}
+              glowIntensity={0.6}
+              edgeSensitivity={40}
+              coneSpread={20}
+              backgroundColor="var(--bg-elevated)"
+              glowColor="245 60 70"
+              colors={["#4F46E5", "#6366f1", "#818cf8"]}
+              fillOpacity={0.3}
+            >
+              <div className="keycard">
+                {/* Header: icon + name + type badge */}
+                <div className="keycard-header">
+                  <div className="keycard-icon">
+                    <Key size={20} />
+                  </div>
+                  <div className="keycard-title">
+                    <div className="keycard-name">{key.name}</div>
+                    <span className="keycard-type-badge">{key.keyType.toUpperCase()}</span>
+                  </div>
                 </div>
-                <div className="key-card-info">
-                  <div className="key-card-name">{key.name}</div>
-                  <div className="key-card-meta">{key.keyType}</div>
+
+                {/* Fingerprint box */}
+                <div className="keycard-fingerprint-box">
+                  <div className="keycard-fingerprint-content">
+                    <span className="keycard-fingerprint-label">Fingerprint</span>
+                    <span className="keycard-fingerprint-value" title={key.fingerprint}>
+                      {key.fingerprint.length > 28 ? key.fingerprint.slice(0, 28) + "..." : key.fingerprint}
+                    </span>
+                  </div>
                 </div>
-                <div className="key-card-actions">
-                  <button className="key-action-btn" onClick={() => copyPrivateKey(key)} title="Copy private key">
-                    <Copy size={14} />
-                  </button>
-                  <button className="key-action-btn" onClick={() => openEditDialog(key)} title="Edit key">
-                    <Pencil size={14} />
-                  </button>
-                  <button className="key-action-btn danger" onClick={() => confirmDelete(key)} title="Delete key">
-                    <Trash2 size={14} />
-                  </button>
+
+                {/* Actions row */}
+                <div className="keycard-footer">
+                  <div className="keycard-actions">
+                    <button className="btn-secondary btn-sm" onClick={() => copyPrivateKey(key)} title="Copy private key to clipboard">
+                      <Copy size={13} /> Copy Key
+                    </button>
+                    <button className="btn-secondary btn-sm" onClick={() => openEditDialog(key)} title="Edit key">
+                      <Pencil size={13} />
+                    </button>
+                    <button className="btn-secondary btn-sm btn-icon-danger" onClick={() => confirmDelete(key)} title="Delete key">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
                 </div>
               </div>
-              <div className="key-card-fingerprint" title={key.fingerprint}>
-                {key.fingerprint}
-              </div>
-            </div>
+            </BorderGlow>
           ))}
         </div>
       )}
@@ -227,7 +253,7 @@ export function KeyManager() {
               </div>
               <div className="modal-footer">
                 <button className="btn-secondary" onClick={cancelDelete}>Cancel</button>
-                <button className="btn-primary" style={{ background: "var(--danger)" }} onClick={executeDelete}>Delete</button>
+                <button className="btn-danger" onClick={executeDelete}>Delete</button>
               </div>
             </div>
           </div>

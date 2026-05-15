@@ -16,8 +16,8 @@
         "title": "NexPort",
         "width": 1200,
         "height": 800,
-        "minWidth": 800,
-        "minHeight": 500,
+        "minWidth": 1024,
+        "minHeight": 640,
         "resizable": true,
         "decorations": false
       }

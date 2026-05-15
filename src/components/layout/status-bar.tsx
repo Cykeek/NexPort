@@ -8,7 +8,9 @@ export function StatusBar() {
 
   return (
     <div className="statusbar">
-      <div className="statusbar-left" />
+      <div className="statusbar-left">
+        <span className="statusbar-version">v0.3.2-beta</span>
+      </div>
       <div className="statusbar-right">
         {mounted && (
           <div className={`statusbar-network ${online ? "connected" : "disconnected"}`}>

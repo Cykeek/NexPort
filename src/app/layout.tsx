@@ -1,8 +1,17 @@
 import "./globals.css";
 import "@/fonts/fonts.css";
-import { Geist } from "next/font/google";
+import localFont from "next/font/local";
 
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
+const openRunde = localFont({
+  src: [
+    { path: "../fonts/OpenRunde-Regular.woff2", weight: "400", style: "normal" },
+    { path: "../fonts/OpenRunde-Medium.woff2", weight: "500", style: "normal" },
+    { path: "../fonts/OpenRunde-Semibold.woff2", weight: "600", style: "normal" },
+    { path: "../fonts/OpenRunde-Bold.woff2", weight: "700", style: "normal" },
+  ],
+  variable: "--font-sans",
+  display: "swap",
+});
 
 export default function RootLayout({
   children,
@@ -10,8 +19,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning className={`font-sans ${geist.variable}`}>
-      <body className="antialiased">
+    <html lang="en" suppressHydrationWarning className={openRunde.variable}>
+      <body>
         {children}
       </body>
     </html>

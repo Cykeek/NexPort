@@ -36,8 +36,8 @@ export function useWindowControls() {
       const target = e.target as HTMLElement;
       if (target.closest("button")) return;
       if (target.closest('[data-tab="true"]')) return;
-      const win = getCurrentWindow();
-      win.startDragging();
+      e.preventDefault();
+      getCurrentWindow().startDragging();
     };
 
     el.addEventListener("pointerdown", onPointerDown);
