@@ -3,12 +3,14 @@ import { toast } from "sonner";
 import {
   AVAILABLE_FONTS,
   AVAILABLE_FONT_WEIGHTS,
+  AVAILABLE_COLOR_MODES,
   DEFAULT_PREFERENCES,
   FONT_SIZE_MIN,
   FONT_SIZE_MAX,
   LOCALSTORAGE_KEY,
 } from "@/config/constants";
-import { AVAILABLE_THEMES } from "@/config/themes";
+import type { ColorMode } from "@/config/constants";
+import { AVAILABLE_THEMES, getThemeByName, getThemeCounterpart } from "@/config/themes";
 
 /* ─── Interfaces ───────────────────────────────────────────────────────── */
 
@@ -18,6 +20,7 @@ export interface AppearancePreferences {
   fontWeight: number;
   themeName: string;
   uiThemingEnabled: boolean;
+  colorMode: ColorMode;
 }
 
 export interface ImportResult {
@@ -33,6 +36,7 @@ export interface AppearanceState extends AppearancePreferences {
   setFontWeight: (weight: number) => void;
   setThemeName: (name: string) => void;
   setUIThemingEnabled: (enabled: boolean) => void;
+  setColorMode: (mode: ColorMode) => void;
   reset: () => void;
   getPreferences: () => AppearancePreferences;
   importPreferences: (raw: unknown) => ImportResult;
@@ -75,6 +79,16 @@ export function validateThemeName(value: unknown): string {
   return DEFAULT_PREFERENCES.themeName;
 }
 
+export function validateColorMode(value: unknown): ColorMode {
+  if (
+    typeof value === "string" &&
+    (AVAILABLE_COLOR_MODES as readonly string[]).includes(value)
+  ) {
+    return value as ColorMode;
+  }
+  return DEFAULT_PREFERENCES.colorMode;
+}
+
 export function validatePreferences(raw: unknown): AppearancePreferences {
   if (typeof raw !== "object" || raw === null) {
     return { ...DEFAULT_PREFERENCES };
@@ -89,6 +103,7 @@ export function validatePreferences(raw: unknown): AppearancePreferences {
       typeof obj.uiThemingEnabled === "boolean"
         ? obj.uiThemingEnabled
         : DEFAULT_PREFERENCES.uiThemingEnabled,
+    colorMode: validateColorMode(obj.colorMode),
   };
 }
 
@@ -111,10 +126,35 @@ function loadFromLocalStorage(): AppearancePreferences {
     const raw = localStorage.getItem(LOCALSTORAGE_KEY);
     if (!raw) return { ...DEFAULT_PREFERENCES };
     const parsed = JSON.parse(raw);
-    return validatePreferences(parsed);
+    const prefs = validatePreferences(parsed);
+
+    // Reconcile theme with color mode on load.
+    // If the stored theme variant doesn't match the effective color mode, switch it.
+    const effectiveMode = resolveEffectiveColorMode(prefs.colorMode);
+    const theme = getThemeByName(prefs.themeName);
+    if (theme.variant !== effectiveMode) {
+      const counterpart = getThemeCounterpart(prefs.themeName);
+      prefs.themeName = counterpart ?? (effectiveMode === "light" ? "default-light" : "default-dark");
+    }
+
+    return prefs;
   } catch {
     return { ...DEFAULT_PREFERENCES };
   }
+}
+
+/**
+ * Resolves the effective color mode synchronously (for use outside React).
+ * "system" is resolved using window.matchMedia.
+ */
+function resolveEffectiveColorMode(colorMode: ColorMode): "light" | "dark" {
+  if (colorMode === "system") {
+    if (typeof window !== "undefined") {
+      return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+    }
+    return "dark";
+  }
+  return colorMode;
 }
 
 function persistToLocalStorage(prefs: AppearancePreferences): void {
@@ -165,6 +205,22 @@ export const useAppearanceStore = create<AppearanceState>((set, get) => ({
     persistToLocalStorage(get().getPreferences());
   },
 
+  setColorMode: (mode: ColorMode) => {
+    if (!(AVAILABLE_COLOR_MODES as readonly string[]).includes(mode)) return;
+    set({ colorMode: mode });
+
+    // Immediately reconcile theme with the new color mode
+    const effectiveMode = resolveEffectiveColorMode(mode);
+    const currentTheme = getThemeByName(get().themeName);
+    if (currentTheme.variant !== effectiveMode) {
+      const counterpart = getThemeCounterpart(get().themeName);
+      const newTheme = counterpart ?? (effectiveMode === "light" ? "default-light" : "default-dark");
+      set({ themeName: newTheme });
+    }
+
+    persistToLocalStorage(get().getPreferences());
+  },
+
   reset: () => {
     set({ ...DEFAULT_PREFERENCES });
     try {
@@ -175,8 +231,8 @@ export const useAppearanceStore = create<AppearanceState>((set, get) => ({
   },
 
   getPreferences: (): AppearancePreferences => {
-    const { fontFamily, fontSize, fontWeight, themeName, uiThemingEnabled } = get();
-    return { fontFamily, fontSize, fontWeight, themeName, uiThemingEnabled };
+    const { fontFamily, fontSize, fontWeight, themeName, uiThemingEnabled, colorMode } = get();
+    return { fontFamily, fontSize, fontWeight, themeName, uiThemingEnabled, colorMode };
   },
 
   importPreferences: (raw: unknown): ImportResult => {
@@ -200,6 +256,9 @@ export const useAppearanceStore = create<AppearanceState>((set, get) => ({
       }
       if (obj.uiThemingEnabled !== undefined && obj.uiThemingEnabled !== validated.uiThemingEnabled) {
         resetFields.push("uiThemingEnabled");
+      }
+      if (obj.colorMode !== undefined && obj.colorMode !== validated.colorMode) {
+        resetFields.push("colorMode");
       }
     }
 

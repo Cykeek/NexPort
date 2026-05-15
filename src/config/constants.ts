@@ -81,6 +81,10 @@ export const AVAILABLE_FONT_WEIGHTS = [
   { value: 700, label: "Bold" },
 ] as const;
 
+/** Available color mode options. */
+export const AVAILABLE_COLOR_MODES = ["dark", "light", "system"] as const;
+export type ColorMode = (typeof AVAILABLE_COLOR_MODES)[number];
+
 /** Default appearance preferences applied when no saved state exists or values are invalid. */
 export const DEFAULT_PREFERENCES = {
   fontFamily: "Fira Code",
@@ -88,4 +92,5 @@ export const DEFAULT_PREFERENCES = {
   fontWeight: 400,
   themeName: "default-dark",
   uiThemingEnabled: false,
+  colorMode: "dark" as ColorMode,
 } as const;
