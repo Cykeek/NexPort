@@ -80,10 +80,16 @@ export interface KnownHostEntry {
 
 export type HostStatus = "online" | "offline" | "unknown";
 
+interface HostCheckResult {
+  status: HostStatus;
+  response_time_ms: number | null;
+}
+
 export const connectionApi = {
-  /** Check whether a host is reachable over TCP. */
-  checkHostStatus(host: string, port: number): Promise<HostStatus> {
-    return invoke("check_host_status", { host, port });
+  /** Check whether a host is reachable over TCP. Returns status and response time. */
+  async checkHostStatus(host: string, port: number): Promise<{ status: HostStatus; responseTimeMs: number | null }> {
+    const result = await invoke<HostCheckResult>("check_host_status", { host, port });
+    return { status: result.status, responseTimeMs: result.response_time_ms };
   },
 
   /** Save (create or update) a connection profile. */
@@ -104,6 +110,16 @@ export const connectionApi = {
   /** Update the detected OS for a saved connection. */
   updateOs(id: string, os: string): Promise<void> {
     return invoke("update_connection_os", { id, os });
+  },
+
+  /** Record a successful connection session (updates last_connected, session_count, fingerprint, response_time). */
+  recordSession(id: string, fingerprint?: string, responseTimeMs?: number): Promise<ConnectionProfile> {
+    return invoke("record_connection_session", { id, fingerprint: fingerprint ?? null, responseTimeMs: responseTimeMs ?? null });
+  },
+
+  /** Update tags for a connection. */
+  updateTags(id: string, tags: string[]): Promise<ConnectionProfile> {
+    return invoke("update_connection_tags", { id, tags });
   },
 };
 

@@ -58,6 +58,8 @@ pub fn run() {
             commands::connections::delete_connection,
             commands::connections::check_host_status,
             commands::connections::update_connection_os,
+            commands::connections::record_connection_session,
+            commands::connections::update_connection_tags,
             commands::keys::generate_key,
             commands::keys::import_key,
             commands::keys::list_keys,

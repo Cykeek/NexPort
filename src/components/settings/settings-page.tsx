@@ -5,10 +5,11 @@ import { check, Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-shell";
-import { Download, RefreshCw, Check, ChevronDown, ExternalLink, Zap } from "lucide-react";
+import { Download, RefreshCw, Check, ChevronDown, ExternalLink, Zap, Info, Bell, Palette } from "lucide-react";
 import { AppearanceSection } from "./appearance-section";
 
 type UpdateChannel = "stable" | "dev";
+type SettingsTab = "general" | "appearance";
 
 const CHANNEL_ENDPOINTS: Record<UpdateChannel, string> = {
   stable: "https://github.com/Cykeek/NexPort/releases/latest/download/latest.json",
@@ -21,7 +22,13 @@ interface UpdateInfo {
   body?: string;
 }
 
+const SETTINGS_TABS = [
+  { id: "general" as const, label: "General", icon: Info },
+  { id: "appearance" as const, label: "Appearance", icon: Palette },
+];
+
 export function SettingsPage() {
+  const [activeTab, setActiveTab] = useState<SettingsTab>("general");
   const [channel, setChannel] = useState<UpdateChannel>(() => {
     if (typeof window !== "undefined") {
       return (localStorage.getItem("update-channel") as UpdateChannel) || "stable";
@@ -33,7 +40,6 @@ export function SettingsPage() {
   const [downloading, setDownloading] = useState(false);
   const [update, setUpdate] = useState<Update | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-
   const [updateStatus, setUpdateStatus] = useState<"checking" | "available" | "up-to-date" | "no-packages">("checking");
 
   useEffect(() => {
@@ -59,16 +65,11 @@ export function SettingsPage() {
 
     try {
       if (activeChannel === "stable") {
-        // First check if the stable manifest exists and has assets
         try {
           const responseText = await invoke<string>("fetch_url", { url: CHANNEL_ENDPOINTS.stable });
           const manifest = JSON.parse(responseText);
           const hasPlatforms = manifest.platforms && Object.keys(manifest.platforms).length > 0;
-          if (!hasPlatforms) {
-            setUpdateStatus("no-packages");
-            return;
-          }
-          // Manifest exists with assets — now use Tauri's check() for proper version comparison + install
+          if (!hasPlatforms) { setUpdateStatus("no-packages"); return; }
           const result = await check({ timeout: 10 });
           if (result) {
             setUpdate(result);
@@ -77,50 +78,25 @@ export function SettingsPage() {
           } else {
             setUpdateStatus("up-to-date");
           }
-        } catch {
-          setUpdateStatus("no-packages");
-        }
+        } catch { setUpdateStatus("no-packages"); }
       } else {
-        // Dev channel: fetch manifest via Rust backend (bypasses webview CSP/CORS)
         const responseText = await invoke<string>("fetch_url", { url: CHANNEL_ENDPOINTS.dev });
         const manifest = JSON.parse(responseText);
-
-        // Check if the manifest has platform data (actual assets)
         const hasPlatforms = manifest.platforms && Object.keys(manifest.platforms).length > 0;
-        if (!hasPlatforms) {
-          setUpdateStatus("no-packages");
-          return;
-        }
+        if (!hasPlatforms) { setUpdateStatus("no-packages"); return; }
 
-        // Get the actual installed app version from Tauri
         const { getVersion } = await import("@tauri-apps/api/app");
         const installedVersion = await getVersion();
-        
-        // Get the commit hash this binary was built from (embedded at compile time)
         const buildCommit = await invoke<string>("get_build_commit");
-        
-        // The manifest version is like "0.3.1-dev.abc1234"
-        // The installed version is like "0.3.1" (from tauri.conf.json)
-        // Extract the commit hash from the manifest version
         const devHashMatch = manifest.version?.match(/-dev\.([a-f0-9]+)$/);
         const manifestHash = devHashMatch ? devHashMatch[1] : null;
         const manifestBase = manifest.version?.replace(/-dev\..+$/, "") || "";
-        
-        // Check if this is a newer build:
-        // 1. Base version is higher than installed → definitely newer
-        // 2. Same base version but different commit hash from what we're running → newer dev build
-        //    Compare against the compile-time build commit (reliable) first,
-        //    then fall back to localStorage for builds that predate the embedded hash.
         const knownCommit = buildCommit && buildCommit !== "unknown" ? buildCommit : localStorage.getItem("nexport-last-dev-hash");
         const isNewerBase = manifestBase !== installedVersion && manifestBase > installedVersion;
         const isNewerDev = manifestBase === installedVersion && manifestHash && manifestHash !== knownCommit;
-        
+
         if (isNewerBase || isNewerDev) {
-          setUpdateInfo({
-            version: manifest.version,
-            date: manifest.pub_date,
-            body: manifest.notes || "Dev build available",
-          });
+          setUpdateInfo({ version: manifest.version, date: manifest.pub_date, body: manifest.notes || "Dev build available" });
           setUpdate(null);
           setUpdateStatus("available");
         } else {
@@ -137,13 +113,9 @@ export function SettingsPage() {
 
   const downloadAndInstall = async () => {
     if (!update) {
-      // Dev channel without auto-install — open GitHub releases page in default browser
-      // Save the current manifest hash so we know this build was downloaded
       if (updateInfo?.version) {
         const hashMatch = updateInfo.version.match(/-dev\.([a-f0-9]+)$/);
-        if (hashMatch) {
-          localStorage.setItem("nexport-last-dev-hash", hashMatch[1]);
-        }
+        if (hashMatch) localStorage.setItem("nexport-last-dev-hash", hashMatch[1]);
       }
       await open("https://github.com/Cykeek/NexPort/releases/tag/dev-latest");
       return;
@@ -162,159 +134,135 @@ export function SettingsPage() {
     <div className="settings-page">
       <h1 className="settings-title">Settings</h1>
 
-      {/* About Section */}
-      <div className="settings-section">
-        <div className="settings-section-header">
-          <span className="settings-section-title">About</span>
-          <span className="settings-section-badge">v0.3.2-beta</span>
-        </div>
-
-        <div className="settings-row">
-          <div className="settings-row-left">
-            <div className="settings-row-icon">
-              <Zap size={16} />
-            </div>
-            <div className="settings-row-text">
-              <span className="settings-row-label">NexPort</span>
-              <span className="settings-row-desc">A modern SSH client for desktop</span>
-            </div>
-          </div>
-          <a
-            href="https://github.com/Cykeek/NexPort"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="settings-row-action-link"
-          >
-            GitHub <ExternalLink size={11} />
-          </a>
-        </div>
-
-        <div className="settings-row">
-          <div className="settings-row-left">
-            <div className="settings-row-text">
-              <span className="settings-row-label">Version</span>
-              <span className="settings-row-desc">Current installed version</span>
-            </div>
-          </div>
-          <span className="settings-row-value">0.3.2-beta</span>
-        </div>
-
-        <div className="settings-row">
-          <div className="settings-row-left">
-            <div className="settings-row-text">
-              <span className="settings-row-label">Build</span>
-              <span className="settings-row-desc">Release channel for this build</span>
-            </div>
-          </div>
-          <span className="settings-row-value">{channel}</span>
-        </div>
-      </div>
-
-      {/* Updates Section */}
-      <div className="settings-section">
-        <div className="settings-section-header">
-          <span className="settings-section-title">Updates</span>
-        </div>
-
-        <div className="settings-row">
-          <div className="settings-row-left">
-            <div className="settings-row-text">
-              <span className="settings-row-label">Update channel</span>
-              <span className="settings-row-desc">Choose between stable and dev builds</span>
-            </div>
-          </div>
-          <div className="settings-dropdown-wrapper">
-            <button className="settings-channel-btn" onClick={() => setDropdownOpen(!dropdownOpen)}>
-              <span className="settings-channel-dot" style={{ background: channel === "stable" ? "var(--success)" : "var(--warning)" }} />
-              {channel === "stable" ? "Stable" : "Dev"}
-              <ChevronDown size={11} />
+      <div className="settings-layout">
+        {/* Settings Tabs */}
+        <nav className="settings-tabs">
+          {SETTINGS_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              className={`settings-tab ${activeTab === tab.id ? "settings-tab--active" : ""}`}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              <tab.icon size={15} />
+              {tab.label}
             </button>
-            {dropdownOpen && (
-              <>
-                <div className="settings-dropdown-backdrop" onClick={() => setDropdownOpen(false)} />
-                <div className="settings-dropdown-menu">
-                  <button className={`settings-dropdown-item ${channel === "stable" ? "active" : ""}`} onClick={() => handleChannelChange("stable")}>
-                    <span className="settings-channel-dot" style={{ background: "var(--success)" }} />
-                    Stable
-                    <span className="settings-dropdown-hint">main</span>
-                  </button>
-                  <button className={`settings-dropdown-item ${channel === "dev" ? "active" : ""}`} onClick={() => handleChannelChange("dev")}>
-                    <span className="settings-channel-dot" style={{ background: "var(--warning)" }} />
-                    Dev
-                    <span className="settings-dropdown-hint">dev</span>
-                  </button>
+          ))}
+        </nav>
+
+        {/* Settings Content */}
+        <div className="settings-content">
+          {activeTab === "general" && (
+            <>
+              {/* General Settings Grid */}
+              <div className="settings-grid">
+                {/* About Card */}
+                <div className="settings-card">
+                  <div className="settings-card-title">About</div>
+                  <div className="settings-card-body">
+                    <div className="settings-row">
+                      <div className="settings-row-left">
+                        <div className="settings-row-icon">
+                          <Zap size={16} />
+                        </div>
+                        <div className="settings-row-text">
+                          <span className="settings-row-label">NexPort</span>
+                          <span className="settings-row-desc">A modern SSH client for desktop</span>
+                        </div>
+                      </div>
+                      <a href="https://github.com/Cykeek/NexPort" target="_blank" rel="noopener noreferrer" className="settings-row-action-link">
+                        GitHub <ExternalLink size={11} />
+                      </a>
+                    </div>
+                    <div className="settings-row">
+                      <div className="settings-row-left">
+                        <div className="settings-row-text">
+                          <span className="settings-row-label">Version</span>
+                        </div>
+                      </div>
+                      <span className="settings-row-value">0.3.2-beta</span>
+                    </div>
+                    <div className="settings-row">
+                      <div className="settings-row-left">
+                        <div className="settings-row-text">
+                          <span className="settings-row-label">Build Channel</span>
+                        </div>
+                      </div>
+                      <span className="settings-row-value">{channel}</span>
+                    </div>
+                  </div>
                 </div>
-              </>
-            )}
-          </div>
-        </div>
 
-        <div className="settings-row">
-          <div className="settings-row-left">
-            <div className="settings-row-text">
-              <span className="settings-row-label">Check for updates</span>
-              <span className="settings-row-desc">
-                {checking
-                  ? "Checking..."
-                  : updateStatus === "available"
-                    ? `Update available: ${updateInfo?.version}`
-                    : updateStatus === "no-packages"
-                      ? "No release packages found"
-                      : "Already updated"}
-              </span>
-            </div>
-          </div>
-          {checking ? (
-            <div className="settings-row-action-btn disabled">
-              <RefreshCw size={12} className="settings-spin" />
-              Checking
-            </div>
-          ) : updateInfo ? (
-            <button className="settings-row-action-btn primary" onClick={downloadAndInstall} disabled={downloading}>
-              {downloading ? <RefreshCw size={12} className="settings-spin" /> : <Download size={12} />}
-              {downloading ? "Installing..." : update ? "Install" : "Download"}
-            </button>
-          ) : (
-            <button className="settings-row-action-btn" onClick={() => checkForUpdates()}>
-              <RefreshCw size={12} />
-              Check now
-            </button>
+                {/* Updates Card */}
+                <div className="settings-card">
+                  <div className="settings-card-title">Updates</div>
+                  <div className="settings-card-body">
+                    <div className="settings-row">
+                      <div className="settings-row-left">
+                        <div className="settings-row-text">
+                          <span className="settings-row-label">Update Channel</span>
+                        </div>
+                      </div>
+                      <div className="settings-dropdown-wrapper">
+                        <button className="settings-channel-btn" onClick={() => setDropdownOpen(!dropdownOpen)}>
+                          <span className="settings-channel-dot" style={{ background: channel === "stable" ? "var(--success)" : "var(--warning)" }} />
+                          {channel === "stable" ? "Stable" : "Dev"}
+                          <ChevronDown size={11} />
+                        </button>
+                        {dropdownOpen && (
+                          <>
+                            <div className="settings-dropdown-backdrop" onClick={() => setDropdownOpen(false)} />
+                            <div className="settings-dropdown-menu">
+                              <button className={`settings-dropdown-item ${channel === "stable" ? "active" : ""}`} onClick={() => handleChannelChange("stable")}>
+                                <span className="settings-channel-dot" style={{ background: "var(--success)" }} />
+                                Stable
+                                <span className="settings-dropdown-hint">main</span>
+                              </button>
+                              <button className={`settings-dropdown-item ${channel === "dev" ? "active" : ""}`} onClick={() => handleChannelChange("dev")}>
+                                <span className="settings-channel-dot" style={{ background: "var(--warning)" }} />
+                                Dev
+                                <span className="settings-dropdown-hint">dev</span>
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div className="settings-row">
+                      <div className="settings-row-left">
+                        <div className="settings-row-text">
+                          <span className="settings-row-label">Check for Updates</span>
+                          <span className="settings-row-desc">
+                            {checking ? "Checking..." : updateStatus === "available" ? `v${updateInfo?.version} available` : updateStatus === "no-packages" ? "No packages found" : "Up to date"}
+                          </span>
+                        </div>
+                      </div>
+                      {checking ? (
+                        <div className="btn-secondary btn-sm btn-disabled">
+                          <RefreshCw size={12} className="settings-spin" />
+                        </div>
+                      ) : updateInfo ? (
+                        <button className="btn-primary btn-sm" onClick={downloadAndInstall} disabled={downloading}>
+                          {downloading ? <RefreshCw size={12} className="settings-spin" /> : <Download size={12} />}
+                          {downloading ? "Installing" : "Update"}
+                        </button>
+                      ) : (
+                        <button className="btn-secondary btn-sm" onClick={() => checkForUpdates()}>
+                          <RefreshCw size={12} />
+                          Check
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {activeTab === "appearance" && (
+            <AppearanceSection />
           )}
         </div>
-
-        <div className="settings-row">
-          <div className="settings-row-left">
-            <div className="settings-row-text">
-              <span className="settings-row-label">Status</span>
-              <span className="settings-row-desc">Current update status</span>
-            </div>
-          </div>
-          <div className="settings-status-indicator" style={{ color: updateStatus === "no-packages" ? "var(--text-muted)" : updateStatus === "available" ? "var(--accent)" : "var(--success)" }}>
-            {checking ? (
-              <>
-                <RefreshCw size={12} className="settings-spin" />
-                <span>Checking</span>
-              </>
-            ) : updateStatus === "available" ? (
-              <>
-                <Download size={12} />
-                <span>Update ready</span>
-              </>
-            ) : updateStatus === "no-packages" ? (
-              <>
-                <span>No packages</span>
-              </>
-            ) : (
-              <>
-                <Check size={12} />
-                <span>Up to date</span>
-              </>
-            )}
-          </div>
-        </div>
       </div>
-
-      <AppearanceSection />
     </div>
   );
 }

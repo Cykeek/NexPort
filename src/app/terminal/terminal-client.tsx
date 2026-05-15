@@ -8,6 +8,7 @@ import "@xterm/xterm/css/xterm.css";
 import { X, Plus, Minus, Square } from "lucide-react";
 import { useWindowControls } from "@/hooks/use-window-controls";
 import { useColorMode } from "@/hooks/use-color-mode";
+import { WanderingEyes } from "@/components/ui/wandering-eyes";
 import {
   TERMINAL_CONFIG,
   SSH_DEFAULTS,
@@ -556,99 +557,22 @@ export default function TerminalPageClient() {
 
         {/* Connecting progress overlay */}
         {connecting && (
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              background: ui.bg,
-              gap: "20px",
-              color: ui.text,
-              zIndex: 10,
-              padding: "24px",
-            }}
-          >
-            <div style={{ fontSize: "15px", fontWeight: 600 }}>
+          <div className="term-connect-overlay" style={{ background: ui.bg, color: ui.text }}>
+            <WanderingEyes
+              className="term-connect-eyes"
+              pupilColor={ui.accent}
+              eyeColor={ui.textMuted}
+            />
+            <div className="term-connect-status">
               Connecting to {initParams?.host}:{initParams?.port}
             </div>
-
-            {/* Progress steps */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px", width: "280px" }}>
-              {CONNECT_STEPS.map((step, i) => {
-                const isComplete = i < connectStep;
-                const isActive = i === connectStep;
-                return (
-                  <div
-                    key={step.label}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "10px",
-                      padding: "6px 0",
-                      opacity: i > connectStep ? 0.3 : 1,
-                      transition: "opacity 0.3s",
-                    }}
-                  >
-                    {/* Step indicator */}
-                    <div style={{
-                      width: "20px", height: "20px", borderRadius: "50%", flexShrink: 0,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: "11px", fontWeight: 600,
-                      background: isComplete ? "#22c55e" : isActive ? ui.accent : "transparent",
-                      border: isActive ? `2px solid ${ui.accent}` : isComplete ? "none" : `2px solid ${ui.border}`,
-                      color: isComplete ? "#fff" : isActive ? ui.accent : ui.textMuted,
-                      transition: "all 0.3s",
-                    }}>
-                      {isComplete ? "✓" : i + 1}
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: "13px", fontWeight: isActive ? 600 : 400, color: isActive || isComplete ? ui.text : ui.textMuted }}>
-                        {step.label}
-                      </div>
-                      {isActive && (
-                        <div style={{ fontSize: "11px", color: ui.textMuted }}>
-                          {step.detail}
-                        </div>
-                      )}
-                    </div>
-                    {isActive && (
-                      <div style={{
-                        width: "14px", height: "14px",
-                        border: `2px solid ${ui.border}`, borderTopColor: ui.accent,
-                        borderRadius: "50%",
-                        animation: "spin 0.8s linear infinite",
-                      }} />
-                    )}
-                  </div>
-                );
-              })}
+            <div className="term-connect-step">
+              {CONNECT_STEPS[connectStep]?.label}
+              {CONNECT_STEPS[connectStep]?.detail && (
+                <span className="term-connect-detail"> — {CONNECT_STEPS[connectStep].detail}</span>
+              )}
             </div>
-
-            <button
-              onClick={winClose}
-              style={{
-                marginTop: "8px",
-                padding: "6px 20px",
-                background: "transparent",
-                border: `1px solid ${ui.border}`,
-                borderRadius: "6px",
-                color: ui.textMuted,
-                cursor: "pointer",
-                fontSize: "12px",
-                transition: "all 0.15s",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = ui.textMuted;
-                e.currentTarget.style.color = ui.text;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = ui.border;
-                e.currentTarget.style.color = ui.textMuted;
-              }}
-            >
+            <button className="btn-secondary btn-sm" onClick={winClose}>
               Cancel
             </button>
           </div>

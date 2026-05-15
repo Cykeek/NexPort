@@ -25,6 +25,16 @@ pub struct ConnectionProfile {
     pub group: Option<String>,
     #[serde(default)]
     pub detected_os: Option<String>,
+    #[serde(default)]
+    pub last_connected: Option<String>,
+    #[serde(default)]
+    pub session_count: u32,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub host_fingerprint: Option<String>,
+    #[serde(default)]
+    pub response_time_ms: Option<u32>,
 }
 
 /// Frontend-safe representation — never exposes the encrypted password.
@@ -45,6 +55,16 @@ pub struct ConnectionProfileView {
     /// True if a password is stored for this connection (frontend-safe indicator).
     #[serde(default)]
     pub has_password: bool,
+    #[serde(default)]
+    pub last_connected: Option<String>,
+    #[serde(default)]
+    pub session_count: u32,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub host_fingerprint: Option<String>,
+    #[serde(default)]
+    pub response_time_ms: Option<u32>,
 }
 
 impl ConnectionProfile {
@@ -61,6 +81,11 @@ impl ConnectionProfile {
             group: self.group.clone(),
             detected_os: self.detected_os.clone(),
             has_password: self.encrypted_password.as_ref().map(|p| !p.is_empty()).unwrap_or(false),
+            last_connected: self.last_connected.clone(),
+            session_count: self.session_count,
+            tags: self.tags.clone(),
+            host_fingerprint: self.host_fingerprint.clone(),
+            response_time_ms: self.response_time_ms.clone(),
         }
     }
 }
@@ -73,8 +98,14 @@ pub enum HostStatus {
     Unknown,
 }
 
+#[derive(Serialize)]
+pub struct HostCheckResult {
+    pub status: HostStatus,
+    pub response_time_ms: Option<u32>,
+}
+
 #[tauri::command]
-pub async fn check_host_status(host: String, port: u16) -> Result<HostStatus, String> {
+pub async fn check_host_status(host: String, port: u16) -> Result<HostCheckResult, String> {
     // Validate input to prevent malformed hostnames from reaching the network stack.
     if host.trim().is_empty() || host.len() > 255 || host.contains('/') || host.contains('\\') || host.contains('\0') {
         return Err("Invalid hostname".to_string());
@@ -84,14 +115,18 @@ pub async fn check_host_status(host: String, port: u16) -> Result<HostStatus, St
     }
 
     let addr = format!("{}:{}", host, port);
-    
+    let start = std::time::Instant::now();
+
     match tokio::time::timeout(
         Duration::from_secs(3),
         tokio::net::TcpStream::connect(&addr)
     ).await {
-        Ok(Ok(_stream)) => Ok(HostStatus::Online),
-        Ok(Err(_e)) => Ok(HostStatus::Offline),
-        Err(_e) => Ok(HostStatus::Unknown),
+        Ok(Ok(_stream)) => {
+            let elapsed = start.elapsed().as_millis() as u32;
+            Ok(HostCheckResult { status: HostStatus::Online, response_time_ms: Some(elapsed) })
+        },
+        Ok(Err(_e)) => Ok(HostCheckResult { status: HostStatus::Offline, response_time_ms: None }),
+        Err(_e) => Ok(HostCheckResult { status: HostStatus::Unknown, response_time_ms: None }),
     }
 }
 
@@ -188,6 +223,90 @@ pub fn delete_connection(
     }
     write_txn.commit().map_err(|e| AppError::Database(e.to_string()))?;
     Ok(())
+}
+
+/// Record a successful connection — updates last_connected, session_count, fingerprint, response_time.
+#[tauri::command]
+pub fn record_connection_session(
+    id: String,
+    fingerprint: Option<String>,
+    response_time_ms: Option<u32>,
+    state: State<'_, AppState>,
+) -> AppResult<ConnectionProfileView> {
+    let db_guard = state.get_db().map_err(|e| AppError::Database(e.to_string()))?;
+    let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+    let read_txn = db.begin_read().map_err(|e| AppError::Database(e.to_string()))?;
+    let value = read_txn.open_table(CONNECTIONS_TABLE)
+        .map_err(|e| AppError::Database(e.to_string()))?
+        .get(id.as_str())
+        .map_err(|e| AppError::Database(e.to_string()))?
+        .ok_or_else(|| AppError::Database("Connection not found".to_string()))?;
+
+    let mut profile: ConnectionProfile = serde_json::from_str(value.value())
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    // Update metadata
+    profile.last_connected = Some(chrono_now_iso());
+    profile.session_count += 1;
+    if let Some(fp) = fingerprint {
+        profile.host_fingerprint = Some(fp);
+    }
+    if let Some(rt) = response_time_ms {
+        profile.response_time_ms = Some(rt);
+    }
+
+    let write_txn = db.begin_write().map_err(|e| AppError::Database(e.to_string()))?;
+    {
+        let mut table = write_txn.open_table(CONNECTIONS_TABLE)
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let json = serde_json::to_string(&profile).map_err(|e| AppError::Database(e.to_string()))?;
+        table.insert(id.as_str(), json.as_str()).map_err(|e| AppError::Database(e.to_string()))?;
+    }
+    write_txn.commit().map_err(|e| AppError::Database(e.to_string()))?;
+    Ok(profile.to_view())
+}
+
+/// Update tags for a connection.
+#[tauri::command]
+pub fn update_connection_tags(
+    id: String,
+    tags: Vec<String>,
+    state: State<'_, AppState>,
+) -> AppResult<ConnectionProfileView> {
+    let db_guard = state.get_db().map_err(|e| AppError::Database(e.to_string()))?;
+    let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+    let read_txn = db.begin_read().map_err(|e| AppError::Database(e.to_string()))?;
+    let value = read_txn.open_table(CONNECTIONS_TABLE)
+        .map_err(|e| AppError::Database(e.to_string()))?
+        .get(id.as_str())
+        .map_err(|e| AppError::Database(e.to_string()))?
+        .ok_or_else(|| AppError::Database("Connection not found".to_string()))?;
+
+    let mut profile: ConnectionProfile = serde_json::from_str(value.value())
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    profile.tags = tags;
+
+    let write_txn = db.begin_write().map_err(|e| AppError::Database(e.to_string()))?;
+    {
+        let mut table = write_txn.open_table(CONNECTIONS_TABLE)
+            .map_err(|e| AppError::Database(e.to_string()))?;
+        let json = serde_json::to_string(&profile).map_err(|e| AppError::Database(e.to_string()))?;
+        table.insert(id.as_str(), json.as_str()).map_err(|e| AppError::Database(e.to_string()))?;
+    }
+    write_txn.commit().map_err(|e| AppError::Database(e.to_string()))?;
+    Ok(profile.to_view())
+}
+
+/// Simple ISO 8601 timestamp without external chrono dependency.
+fn chrono_now_iso() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let duration = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let secs = duration.as_secs();
+    // Format as a simple Unix timestamp string — frontend will format it.
+    format!("{}", secs)
 }
 
 #[tauri::command]

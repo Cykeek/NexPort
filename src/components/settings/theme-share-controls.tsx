@@ -12,7 +12,7 @@ async function exportPreferences() {
 
   const filePath = await save({
     title: "Export Appearance Preferences",
-    defaultPath: "nexport-appearance.json",
+    defaultPath: "theme.json",
     filters: [{ name: "JSON", extensions: ["json"] }],
   });
 
@@ -99,12 +99,12 @@ export function ThemeShareControls() {
 
   return (
     <div className="theme-share-controls">
-      <button className="theme-share-btn" onClick={handleExport}>
-        <Download size={16} />
+      <button className="btn-secondary btn-sm" onClick={handleExport}>
+        <Download size={14} />
         Export
       </button>
-      <button className="theme-share-btn" onClick={handleImport}>
-        <Upload size={16} />
+      <button className="btn-secondary btn-sm" onClick={handleImport}>
+        <Upload size={14} />
         Import
       </button>
     </div>

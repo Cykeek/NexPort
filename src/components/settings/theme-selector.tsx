@@ -18,7 +18,7 @@ export function ThemeSelector() {
   const filteredThemes = getThemesByVariant(effectiveMode);
 
   return (
-    <div className="settings-row" style={{ flexDirection: "column", alignItems: "stretch" }}>
+    <div className="theme-selector-row">
       <div className="theme-selector-grid">
         {filteredThemes.map((theme) => (
           <button

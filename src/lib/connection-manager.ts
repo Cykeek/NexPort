@@ -39,7 +39,16 @@ export async function openSshTerminal(params: ConnectParams): Promise<boolean> {
   });
 
   return new Promise<boolean>((resolve, reject) => {
-    terminalWindow.once("tauri://created", () => resolve(true));
+    terminalWindow.once("tauri://created", () => {
+      // Record the session from the main window (updates last_connected, session_count)
+      connectionApi.recordSession(params.connectionId)
+        .then(() => {
+          // Trigger a refresh so the UI picks up updated stats
+          window.dispatchEvent(new CustomEvent("refresh-connections"));
+        })
+        .catch(() => {});
+      resolve(true);
+    });
     terminalWindow.once("tauri://error", (e) => reject(e));
   });
 }
