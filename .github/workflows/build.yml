@@ -180,7 +180,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: dev-latest
-          name: NexPort Dev Build
+          name: NexPort Beta Build
           draft: false
           prerelease: true
           files: release-files/*

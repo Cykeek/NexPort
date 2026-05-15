@@ -77,7 +77,7 @@ export function AppSidebar({ open, activeNav, onNavChange, onToggle }: SidebarPr
 
       {/* Footer */}
       <div className="sidebar-footer">
-        <span className="sidebar-footer-version">v0.3.1-beta</span>
+        <span className="sidebar-footer-version">v0.3.2-beta</span>
       </div>
     </div>
   );

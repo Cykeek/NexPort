@@ -166,7 +166,7 @@ export function SettingsPage() {
       <div className="settings-section">
         <div className="settings-section-header">
           <span className="settings-section-title">About</span>
-          <span className="settings-section-badge">v0.3.1-beta</span>
+          <span className="settings-section-badge">v0.3.2-beta</span>
         </div>
 
         <div className="settings-row">
@@ -196,7 +196,7 @@ export function SettingsPage() {
               <span className="settings-row-desc">Current installed version</span>
             </div>
           </div>
-          <span className="settings-row-value">0.3.1-beta</span>
+          <span className="settings-row-value">0.3.2-beta</span>
         </div>
 
         <div className="settings-row">
