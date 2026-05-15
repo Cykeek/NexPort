@@ -10,12 +10,14 @@ import { ConnectionsPage } from "@/components/connections/connections-page";
 import { KeyManager } from "@/components/keys/key-manager";
 import { SettingsPage } from "@/components/settings/settings-page";
 import { useWindowControls } from "@/hooks/use-window-controls";
+import { useColorMode } from "@/hooks/use-color-mode";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 
 export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activePage, setActivePage] = useState<"connections" | "keys" | "settings">("connections");
   const { handleMinimize, handleMaximize, handleClose, dragRef } = useWindowControls();
+  useColorMode();
 
   return (
     <div className="app">

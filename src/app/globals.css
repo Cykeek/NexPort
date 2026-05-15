@@ -1,4 +1,5 @@
 :root{--bg:#0a0a0b;--bg-elevated:#131316;--bg-surface:#1a1a1e;--bg-hover:#222228;--bg-active:#2a2a30;--text:#f4f4f5;--text-secondary:#a1a1aa;--text-muted:#71717a;--border:#27272a;--accent:#3b82f6;--accent-hover:#60a5fa;--accent-subtle:#1e3a5f;--danger:#ef4444;--danger-subtle:#3f1f1f;--success:#22c55e;--success-subtle:#1a3f2a;--warning:#f59e0b;--warning-subtle:#3f2f1a;--radius-sm:6px;--radius-md:8px;--radius-lg:12px}
+html.light{--bg:#f8f9fa;--bg-elevated:#ffffff;--bg-surface:#f1f3f5;--bg-hover:#e9ecef;--bg-active:#dee2e6;--text:#1a1a1a;--text-secondary:#495057;--text-muted:#868e96;--border:#dee2e6;--accent:#3b82f6;--accent-hover:#2563eb;--accent-subtle:#dbeafe;--danger:#ef4444;--danger-subtle:#fee2e2;--success:#22c55e;--success-subtle:#dcfce7;--warning:#f59e0b;--warning-subtle:#fef3c7}
 @keyframes spin{to{transform:rotate(360deg)}}
 *,:before,:after{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,sans-serif;color:var(--text);background:var(--bg);-webkit-font-smoothing:antialiased;font-size:13px;line-height:1.5;overflow:hidden}
@@ -272,3 +273,10 @@ input::placeholder{color:var(--text-muted)}
 .font-picker-item:hover{background:var(--bg-hover);color:var(--text)}
 .font-picker-item.active{background:var(--accent);color:#fff}
 .font-picker-empty{padding:16px;text-align:center;color:var(--text-muted);font-size:12px}
+
+/* Color Mode Selector */
+.color-mode-toggle{display:flex;background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:3px;gap:2px;flex-shrink:0}
+.color-mode-btn{display:flex;align-items:center;gap:5px;padding:5px 10px;border:none;border-radius:var(--radius-sm);font-size:11px;font-weight:500;color:var(--text-muted);background:transparent;cursor:pointer;transition:all .15s}
+.color-mode-btn:hover{color:var(--text)}
+.color-mode-btn--active{background:var(--bg-elevated);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.color-mode-btn-label{white-space:nowrap}

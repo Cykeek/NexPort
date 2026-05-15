@@ -1,21 +1,26 @@
 "use client";
 
-import { themes, type TerminalTheme } from "@/config/themes";
+import { getThemesByVariant, type TerminalTheme } from "@/config/themes";
 import { useAppearanceStore } from "@/stores/appearance-store";
+import { useEffectiveColorMode } from "@/hooks/use-color-mode";
 
 /**
  * Renders a grid of theme cards allowing the user to select a terminal color theme.
  * Each card displays the theme's display name and a color swatch showing the
  * background color and representative ANSI colors.
+ * Themes are filtered based on the current effective color mode (light/dark).
  */
 export function ThemeSelector() {
   const themeName = useAppearanceStore((s) => s.themeName);
   const setThemeName = useAppearanceStore((s) => s.setThemeName);
+  const effectiveMode = useEffectiveColorMode();
+
+  const filteredThemes = getThemesByVariant(effectiveMode);
 
   return (
     <div className="settings-row" style={{ flexDirection: "column", alignItems: "stretch" }}>
       <div className="theme-selector-grid">
-        {themes.map((theme) => (
+        {filteredThemes.map((theme) => (
           <button
             key={theme.name}
             className={`theme-card ${theme.name === themeName ? "theme-card--active" : ""}`}

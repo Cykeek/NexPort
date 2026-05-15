@@ -7,6 +7,7 @@ import { FontWeightControl } from "./font-weight-control";
 import { ThemeSelector } from "./theme-selector";
 import { UIThemeToggle } from "./ui-theme-toggle";
 import { ThemeShareControls } from "./theme-share-controls";
+import { ColorModeSelector } from "./color-mode-selector";
 
 export function AppearanceSection() {
   return (
@@ -15,6 +16,7 @@ export function AppearanceSection() {
         <span className="settings-section-title">Appearance</span>
       </div>
 
+      <ColorModeSelector />
       <TerminalPreview />
       <FontFamilySelector />
       <FontSizeControl />
