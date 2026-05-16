@@ -14,10 +14,10 @@ interface ConnectionCardProps {
   onSelect: (conn: ConnectionProfile) => void;
 }
 
-function getStatusColor(status: HostStatus): string {
-  if (status === "online") return "var(--success)";
-  if (status === "offline") return "var(--danger)";
-  return "var(--text-muted)";
+function getStatusDotClass(status: HostStatus): string {
+  if (status === "online") return "conn-status-dot--online";
+  if (status === "offline") return "conn-status-dot--offline";
+  return "conn-status-dot--unknown";
 }
 
 function getStatusText(status: HostStatus): string {
@@ -32,7 +32,13 @@ function getStatusClass(status: HostStatus): string {
   return "conn-status--unknown";
 }
 
-export function ConnectionCard({ connection, status, onConnect, onEdit, onSelect }: ConnectionCardProps) {
+export function ConnectionCard({
+  connection,
+  status,
+  onConnect,
+  onEdit,
+  onSelect,
+}: ConnectionCardProps) {
   return (
     <BorderGlow
       borderRadius={22}
@@ -49,7 +55,7 @@ export function ConnectionCard({ connection, status, onConnect, onEdit, onSelect
       <div className="conn-card" onClick={() => onSelect(connection)}>
         {/* Status badge */}
         <div className={`conn-status-badge ${getStatusClass(status)}`}>
-          <span className="conn-status-dot" style={{ backgroundColor: getStatusColor(status) }} />
+          <span className={"conn-status-dot " + getStatusDotClass(status)} />
           {getStatusText(status)}
         </div>
 
@@ -62,7 +68,8 @@ export function ConnectionCard({ connection, status, onConnect, onEdit, onSelect
         <div className="conn-card-info">
           <div className="conn-card-name">{connection.name}</div>
           <div className="conn-card-host">
-            {connection.username}@{connection.host}{connection.port !== 22 ? `:${connection.port}` : ""}
+            {connection.username}@{connection.host}
+            {connection.port !== 22 ? `:${connection.port}` : ""}
           </div>
         </div>
 
@@ -70,14 +77,20 @@ export function ConnectionCard({ connection, status, onConnect, onEdit, onSelect
         <div className="conn-card-btns">
           <button
             className="btn-secondary btn-full"
-            onClick={(e) => { e.stopPropagation(); onEdit(connection); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(connection);
+            }}
           >
             <Pencil size={14} />
             Edit
           </button>
           <button
             className="btn-primary btn-full"
-            onClick={(e) => { e.stopPropagation(); onConnect(connection); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onConnect(connection);
+            }}
           >
             <Zap size={14} />
             Connect

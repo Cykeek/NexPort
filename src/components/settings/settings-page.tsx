@@ -204,7 +204,7 @@ export function SettingsPage() {
                       </div>
                       <div className="settings-dropdown-wrapper">
                         <button className="settings-channel-btn" onClick={() => setDropdownOpen(!dropdownOpen)}>
-                          <span className="settings-channel-dot" style={{ background: channel === "stable" ? "var(--success)" : "var(--warning)" }} />
+                          <span className={"settings-channel-dot " + (channel === "stable" ? "settings-channel-dot--stable" : "settings-channel-dot--dev")} />
                           {channel === "stable" ? "Stable" : "Dev"}
                           <ChevronDown size={11} />
                         </button>
@@ -213,12 +213,12 @@ export function SettingsPage() {
                             <div className="settings-dropdown-backdrop" onClick={() => setDropdownOpen(false)} />
                             <div className="settings-dropdown-menu">
                               <button className={`settings-dropdown-item ${channel === "stable" ? "active" : ""}`} onClick={() => handleChannelChange("stable")}>
-                                <span className="settings-channel-dot" style={{ background: "var(--success)" }} />
+                                <span className="settings-channel-dot settings-channel-dot--stable" />
                                 Stable
                                 <span className="settings-dropdown-hint">main</span>
                               </button>
                               <button className={`settings-dropdown-item ${channel === "dev" ? "active" : ""}`} onClick={() => handleChannelChange("dev")}>
-                                <span className="settings-channel-dot" style={{ background: "var(--warning)" }} />
+                                <span className="settings-channel-dot settings-channel-dot--dev" />
                                 Dev
                                 <span className="settings-dropdown-hint">dev</span>
                               </button>

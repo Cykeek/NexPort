@@ -127,14 +127,14 @@ export function ConnectionsPage() {
           className={`conn-filter-pill ${filter === "online" ? "conn-filter-pill--active" : ""}`}
           onClick={() => setFilter("online")}
         >
-          <span className="conn-filter-dot" style={{ background: "var(--success)" }} />
+          <span className="conn-filter-dot conn-filter-dot--online" />
           Online
         </button>
         <button
           className={`conn-filter-pill ${filter === "offline" ? "conn-filter-pill--active" : ""}`}
           onClick={() => setFilter("offline")}
         >
-          <span className="conn-filter-dot" style={{ background: "var(--text-muted)" }} />
+          <span className="conn-filter-dot conn-filter-dot--offline" />
           Offline
         </button>
       </div>

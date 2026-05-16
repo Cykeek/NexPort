@@ -1,6 +1,20 @@
 "use client";
 
-import { X, Server, Key, Globe, Terminal, Zap, Pencil, Trash2, Clock, Activity, Tag, Shield, Wifi } from "lucide-react";
+import {
+  X,
+  Server,
+  Key,
+  Globe,
+  Terminal,
+  Zap,
+  Pencil,
+  Trash2,
+  Clock,
+  Activity,
+  Tag,
+  Shield,
+  Wifi,
+} from "lucide-react";
 import { ConnectionProfile } from "@/types/connection";
 import type { HostStatus } from "@/stores/connection-store";
 import { OSIcon } from "@/lib/os-icons";
@@ -14,10 +28,10 @@ interface ConnectionDetailPanelProps {
   onDelete: (conn: ConnectionProfile) => void;
 }
 
-function getStatusColor(status: HostStatus): string {
-  if (status === "online") return "var(--success)";
-  if (status === "offline") return "var(--danger)";
-  return "var(--text-muted)";
+function getStatusDotClass(status: HostStatus): string {
+  if (status === "online") return "detail-status-dot--online";
+  if (status === "offline") return "detail-status-dot--offline";
+  return "detail-status-dot--unknown";
 }
 
 function getStatusLabel(status: HostStatus): string {
@@ -67,7 +81,9 @@ export function ConnectionDetailPanel({
             </div>
             <div>
               <div className="detail-name">{connection.name}</div>
-              <div className="detail-host">{connection.username}@{connection.host}:{connection.port}</div>
+              <div className="detail-host">
+                {connection.username}@{connection.host}:{connection.port}
+              </div>
             </div>
           </div>
           <button className="btn-secondary btn-sm" onClick={onClose}>
@@ -77,10 +93,12 @@ export function ConnectionDetailPanel({
 
         {/* Status */}
         <div className="detail-status-row">
-          <span className="detail-status-dot" style={{ background: getStatusColor(status) }} />
+          <span className={"detail-status-dot " + getStatusDotClass(status)} />
           <span className="detail-status-text">{getStatusLabel(status)}</span>
           {connection.response_time_ms != null && status === "online" && (
-            <span className="detail-latency">{connection.response_time_ms}ms</span>
+            <span className="detail-latency">
+              {connection.response_time_ms}ms
+            </span>
           )}
         </div>
 
@@ -113,14 +131,18 @@ export function ConnectionDetailPanel({
               <Key size={14} className="detail-info-icon" />
               <div className="detail-info-content">
                 <span className="detail-info-label">Auth Method</span>
-                <span className="detail-info-value">{connection.auth_method === "key" ? "SSH Key" : "Password"}</span>
+                <span className="detail-info-value">
+                  {connection.auth_method === "key" ? "SSH Key" : "Password"}
+                </span>
               </div>
             </div>
             <div className="detail-info-item">
               <Wifi size={14} className="detail-info-icon" />
               <div className="detail-info-content">
                 <span className="detail-info-label">IP Type</span>
-                <span className="detail-info-value">{getIpType(connection.host)}</span>
+                <span className="detail-info-value">
+                  {getIpType(connection.host)}
+                </span>
               </div>
             </div>
             {connection.detected_os && (
@@ -128,7 +150,9 @@ export function ConnectionDetailPanel({
                 <Server size={14} className="detail-info-icon" />
                 <div className="detail-info-content">
                   <span className="detail-info-label">OS</span>
-                  <span className="detail-info-value">{connection.detected_os}</span>
+                  <span className="detail-info-value">
+                    {connection.detected_os}
+                  </span>
                 </div>
               </div>
             )}
@@ -143,14 +167,18 @@ export function ConnectionDetailPanel({
               <Clock size={14} className="detail-info-icon" />
               <div className="detail-info-content">
                 <span className="detail-info-label">Last Connected</span>
-                <span className="detail-info-value">{formatLastConnected(connection.last_connected)}</span>
+                <span className="detail-info-value">
+                  {formatLastConnected(connection.last_connected)}
+                </span>
               </div>
             </div>
             <div className="detail-info-item">
               <Activity size={14} className="detail-info-icon" />
               <div className="detail-info-content">
                 <span className="detail-info-label">Total Connections</span>
-                <span className="detail-info-value">{connection.session_count || 0}</span>
+                <span className="detail-info-value">
+                  {connection.session_count || 0}
+                </span>
               </div>
             </div>
             {connection.response_time_ms != null && (
@@ -158,7 +186,9 @@ export function ConnectionDetailPanel({
                 <Zap size={14} className="detail-info-icon" />
                 <div className="detail-info-content">
                   <span className="detail-info-label">Response Time</span>
-                  <span className="detail-info-value">{connection.response_time_ms}ms</span>
+                  <span className="detail-info-value">
+                    {connection.response_time_ms}ms
+                  </span>
                 </div>
               </div>
             )}
@@ -174,7 +204,9 @@ export function ConnectionDetailPanel({
                 <Shield size={14} className="detail-info-icon" />
                 <div className="detail-info-content">
                   <span className="detail-info-label">Host Fingerprint</span>
-                  <span className="detail-info-value detail-fingerprint">{connection.host_fingerprint}</span>
+                  <span className="detail-info-value detail-fingerprint">
+                    {connection.host_fingerprint}
+                  </span>
                 </div>
               </div>
             </div>
@@ -198,16 +230,25 @@ export function ConnectionDetailPanel({
 
         {/* Actions */}
         <div className="detail-actions">
-          <button className="btn-primary btn-full" onClick={() => onConnect(connection)}>
+          <button
+            className="btn-primary btn-full"
+            onClick={() => onConnect(connection)}
+          >
             <Zap size={14} />
             Connect
           </button>
           <div className="detail-actions-row">
-            <button className="btn-secondary btn-full" onClick={() => onEdit(connection)}>
+            <button
+              className="btn-secondary btn-full"
+              onClick={() => onEdit(connection)}
+            >
               <Pencil size={14} />
               Edit
             </button>
-            <button className="btn-danger btn-full" onClick={() => onDelete(connection)}>
+            <button
+              className="btn-danger btn-full"
+              onClick={() => onDelete(connection)}
+            >
               <Trash2 size={14} />
               Delete
             </button>
