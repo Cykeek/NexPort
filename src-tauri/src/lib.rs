@@ -1,8 +1,8 @@
 mod commands;
+mod crypto;
 mod error;
 mod ssh;
 mod state;
-mod crypto;
 mod vault;
 
 use state::AppState;
@@ -17,7 +17,11 @@ pub fn run() {
     // by the OS crash reporter instead.
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_log::Builder::default().level(log::LevelFilter::Info).build())
+        .plugin(
+            tauri_plugin_log::Builder::default()
+                .level(log::LevelFilter::Info)
+                .build(),
+        )
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
@@ -69,6 +73,7 @@ pub fn run() {
             commands::keys::get_key_data,
             commands::utils::fetch_url,
             commands::utils::get_build_commit,
+            commands::utils::get_network_counters,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

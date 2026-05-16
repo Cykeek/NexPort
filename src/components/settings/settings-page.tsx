@@ -179,7 +179,7 @@ export function SettingsPage() {
                           <span className="settings-row-label">Version</span>
                         </div>
                       </div>
-                      <span className="settings-row-value">0.3.2-beta</span>
+                      <span className="settings-row-value">0.4.0-beta</span>
                     </div>
                     <div className="settings-row">
                       <div className="settings-row-left">

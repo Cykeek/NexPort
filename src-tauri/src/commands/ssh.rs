@@ -10,6 +10,27 @@ use crate::commands::connections::ConnectionProfile;
 use crate::crypto::{decrypt_field, decrypt_key_data};
 use crate::ssh::known_hosts::list_known_hosts_path;
 
+const MAX_SESSION_ID_LEN: usize = 128;
+const MAX_CONNECTION_ID_LEN: usize = 128;
+const MAX_USERNAME_LEN: usize = 128;
+const MAX_PASSWORD_LEN: usize = 4096;
+const MAX_PRIVATE_KEY_LEN: usize = 64 * 1024;
+const MAX_SSH_WRITE_BYTES: usize = 1024 * 1024;
+const MAX_SSH_READ_TIMEOUT_MS: u64 = 5000;
+const MAX_TERMINAL_COLS: u32 = 2000;
+const MAX_TERMINAL_ROWS: u32 = 1000;
+
+fn has_control_chars(input: &str) -> bool {
+    input.chars().any(|c| c.is_control())
+}
+
+fn validate_identifier(value: &str, field: &str, max_len: usize) -> AppResult<()> {
+    if value.trim().is_empty() || value.len() > max_len || has_control_chars(value) {
+        return Err(AppError::InvalidInput(format!("Invalid {}", field)));
+    }
+    Ok(())
+}
+
 /// Validate connection parameters to prevent malformed or malicious input.
 fn validate_connection_params(host: &str, port: u16, username: &str) -> AppResult<()> {
     // Reject empty or whitespace-only hostnames
@@ -28,8 +49,8 @@ fn validate_connection_params(host: &str, port: u16, username: &str) -> AppResul
     if username.trim().is_empty() {
         return Err(AppError::SshConnection("Username cannot be empty".to_string()));
     }
-    // Reject null bytes in username
-    if username.contains('\0') {
+    // Reject control characters and overly long usernames.
+    if has_control_chars(username) || username.len() > MAX_USERNAME_LEN {
         return Err(AppError::SshConnection("Invalid username".to_string()));
     }
     // Reject reserved ports
@@ -71,6 +92,8 @@ fn load_connection_credentials(
     state: &State<'_, AppState>,
     connection_id: &str,
 ) -> AppResult<ConnectionCredentials> {
+    validate_identifier(connection_id, "connection ID", MAX_CONNECTION_ID_LEN)?;
+
     let db_guard = state.get_db()
         .map_err(|e| AppError::Database(e.to_string()))?;
     let db = db_guard.as_ref()
@@ -142,11 +165,14 @@ pub async fn ssh_connect(
     trust_on_first_use: Option<bool>,
     state: State<'_, AppState>,
 ) -> AppResult<String> {
+    validate_identifier(&session_id, "session ID", MAX_SESSION_ID_LEN)?;
+
     // Default to TOFU for backward compatibility
     let tofu = trust_on_first_use.unwrap_or(true);
 
     let (mut final_password, mut final_key_data, final_host, final_port, final_username) =
         if let Some(ref conn_id) = connection_id {
+            validate_identifier(conn_id, "connection ID", MAX_CONNECTION_ID_LEN)?;
             let creds = load_connection_credentials(&state, conn_id)?;
             (creds.password, creds.key_data, creds.host, creds.port, creds.username)
         } else {
@@ -154,6 +180,18 @@ pub async fn ssh_connect(
         };
 
     validate_connection_params(&final_host, final_port, &final_username)?;
+    if let Some(ref pw) = final_password {
+        if pw.len() > MAX_PASSWORD_LEN || pw.contains('\0') {
+            return Err(AppError::InvalidInput("Invalid password".to_string()));
+        }
+    }
+    if let Some(ref kd) = final_key_data {
+        if kd.as_bytes().len() > MAX_PRIVATE_KEY_LEN {
+            return Err(AppError::InvalidInput(
+                "Private key data exceeds allowed size".to_string(),
+            ));
+        }
+    }
 
     let session = SshSession::connect(
         &final_host,
@@ -184,6 +222,8 @@ pub async fn ssh_disconnect(
     session_id: String,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
+    validate_identifier(&session_id, "session ID", MAX_SESSION_ID_LEN)?;
+
     if let Some((_, session)) = state.sessions.remove(&session_id) {
         let mut session = session.lock().await;
         session.disconnect().await.ok();
@@ -196,6 +236,8 @@ pub async fn ssh_is_connected(
     session_id: String,
     state: State<'_, AppState>,
 ) -> AppResult<bool> {
+    validate_identifier(&session_id, "session ID", MAX_SESSION_ID_LEN)?;
+
     // Simple check: just verify session exists in our map
     // The actual connection health is checked via ssh_read errors
     Ok(state.sessions.contains_key(&session_id))
@@ -208,6 +250,11 @@ pub async fn ssh_resize(
     rows: u32,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
+    validate_identifier(&session_id, "session ID", MAX_SESSION_ID_LEN)?;
+    if cols == 0 || rows == 0 || cols > MAX_TERMINAL_COLS || rows > MAX_TERMINAL_ROWS {
+        return Err(AppError::InvalidInput("Invalid terminal dimensions".to_string()));
+    }
+
     let session = state.sessions.get(&session_id)
         .ok_or_else(|| AppError::SessionNotFound(session_id.clone()))?;
     let session = session.clone();
@@ -223,6 +270,13 @@ pub async fn ssh_write(
     data: String,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
+    validate_identifier(&session_id, "session ID", MAX_SESSION_ID_LEN)?;
+    if data.as_bytes().len() > MAX_SSH_WRITE_BYTES {
+        return Err(AppError::InvalidInput(
+            "SSH write payload exceeds allowed size".to_string(),
+        ));
+    }
+
     let session = state.sessions.get(&session_id)
         .ok_or_else(|| AppError::SessionNotFound(session_id.clone()))?;
     let session = session.clone();
@@ -238,11 +292,13 @@ pub async fn ssh_read(
     timeout_ms: Option<u64>,
     state: State<'_, AppState>,
 ) -> AppResult<String> {
+    validate_identifier(&session_id, "session ID", MAX_SESSION_ID_LEN)?;
+
     let session = state.sessions.get(&session_id)
         .ok_or_else(|| AppError::SessionNotFound(session_id.clone()))?;
     let session = session.clone();
     let mut session = session.lock().await;
-    let timeout = Duration::from_millis(timeout_ms.unwrap_or(100));
+    let timeout = Duration::from_millis(timeout_ms.unwrap_or(100).clamp(10, MAX_SSH_READ_TIMEOUT_MS));
     let data = session.read(timeout).await
         .map_err(|e| AppError::SshConnection(e))?;
     Ok(data)
@@ -253,6 +309,8 @@ pub async fn ssh_detect_os(
     connection_id: String,
     state: State<'_, AppState>,
 ) -> AppResult<String> {
+    validate_identifier(&connection_id, "connection ID", MAX_CONNECTION_ID_LEN)?;
+
     // Fetch connection details and credentials from database
     let mut creds = load_connection_credentials(&state, &connection_id)?;
 

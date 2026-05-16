@@ -3,6 +3,8 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 #[allow(dead_code)]
 pub enum AppError {
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
     #[error("SSH connection failed: {0}")]
     SshConnection(String),
     #[error("SSH authentication failed: {0}")]

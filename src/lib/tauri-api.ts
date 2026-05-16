@@ -1,6 +1,6 @@
 /**
  * Type-safe wrappers for Tauri IPC commands.
- * 
+ *
  * Instead of raw `invoke("command_name", { ... })` calls,
  * use these typed functions which guarantee correct signatures at compile time.
  */
@@ -87,8 +87,14 @@ interface HostCheckResult {
 
 export const connectionApi = {
   /** Check whether a host is reachable over TCP. Returns status and response time. */
-  async checkHostStatus(host: string, port: number): Promise<{ status: HostStatus; responseTimeMs: number | null }> {
-    const result = await invoke<HostCheckResult>("check_host_status", { host, port });
+  async checkHostStatus(
+    host: string,
+    port: number,
+  ): Promise<{ status: HostStatus; responseTimeMs: number | null }> {
+    const result = await invoke<HostCheckResult>("check_host_status", {
+      host,
+      port,
+    });
     return { status: result.status, responseTimeMs: result.response_time_ms };
   },
 
@@ -113,13 +119,49 @@ export const connectionApi = {
   },
 
   /** Record a successful connection session (updates last_connected, session_count, fingerprint, response_time). */
-  recordSession(id: string, fingerprint?: string, responseTimeMs?: number): Promise<ConnectionProfile> {
-    return invoke("record_connection_session", { id, fingerprint: fingerprint ?? null, responseTimeMs: responseTimeMs ?? null });
+  recordSession(
+    id: string,
+    fingerprint?: string,
+    responseTimeMs?: number,
+  ): Promise<ConnectionProfile> {
+    return invoke("record_connection_session", {
+      id,
+      fingerprint: fingerprint ?? null,
+      responseTimeMs: responseTimeMs ?? null,
+    });
   },
 
   /** Update tags for a connection. */
   updateTags(id: string, tags: string[]): Promise<ConnectionProfile> {
     return invoke("update_connection_tags", { id, tags });
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Network Meter Commands
+// ---------------------------------------------------------------------------
+
+export interface NetworkCounters {
+  rxBytesTotal: number;
+  txBytesTotal: number;
+  interfaceCount: number;
+}
+
+interface NetworkCountersRaw {
+  rx_bytes_total: number;
+  tx_bytes_total: number;
+  interface_count: number;
+}
+
+export const networkApi = {
+  /** Returns cumulative RX/TX counters across non-loopback interfaces. */
+  async getCounters(): Promise<NetworkCounters> {
+    const raw = await invoke<NetworkCountersRaw>("get_network_counters");
+    return {
+      rxBytesTotal: raw.rx_bytes_total,
+      txBytesTotal: raw.tx_bytes_total,
+      interfaceCount: raw.interface_count,
+    };
   },
 };
 
@@ -134,7 +176,11 @@ export const keyApi = {
   },
 
   /** Generate a new SSH key pair (ed25519 or rsa). */
-  generate(name: string, keyType: string, passphrase?: string): Promise<KeyInfo> {
+  generate(
+    name: string,
+    keyType: string,
+    passphrase?: string,
+  ): Promise<KeyInfo> {
     return invoke("generate_key", { name, keyType, passphrase });
   },
 

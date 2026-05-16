@@ -7,6 +7,137 @@ use crate::crypto::encrypt_field;
 use std::time::Duration;
 
 const CONNECTIONS_TABLE: TableDefinition<&str, &str> = TableDefinition::new("connections");
+const MAX_CONNECTION_ID_LEN: usize = 128;
+const MAX_NAME_LEN: usize = 128;
+const MAX_USERNAME_LEN: usize = 128;
+const MAX_PASSWORD_LEN: usize = 4096;
+const MAX_KEY_ID_LEN: usize = 128;
+const MAX_GROUP_LEN: usize = 64;
+const MAX_OS_LEN: usize = 32;
+const MAX_TAGS: usize = 20;
+const MAX_TAG_LEN: usize = 32;
+const MAX_FINGERPRINT_LEN: usize = 256;
+const MAX_RESPONSE_TIME_MS: u32 = 120_000;
+
+fn has_control_chars(value: &str) -> bool {
+    value.chars().any(|c| c.is_control())
+}
+
+fn validate_id(id: &str) -> AppResult<()> {
+    if id.trim().is_empty() || id.len() > MAX_CONNECTION_ID_LEN || has_control_chars(id) {
+        return Err(AppError::InvalidInput("Invalid connection ID".to_string()));
+    }
+    Ok(())
+}
+
+fn validate_host_and_port(host: &str, port: u16) -> Result<(), String> {
+    if host.trim().is_empty()
+        || host.len() > 255
+        || host.contains('/')
+        || host.contains('\\')
+        || host.contains('\0')
+        || has_control_chars(host)
+    {
+        return Err("Invalid hostname".to_string());
+    }
+    if port == 0 {
+        return Err("Invalid port".to_string());
+    }
+    Ok(())
+}
+
+fn validate_tags(tags: &[String]) -> AppResult<()> {
+    if tags.len() > MAX_TAGS {
+        return Err(AppError::InvalidInput(
+            "Too many tags on connection".to_string(),
+        ));
+    }
+
+    for tag in tags {
+        if tag.trim().is_empty() || tag.len() > MAX_TAG_LEN || has_control_chars(tag) {
+            return Err(AppError::InvalidInput("Invalid connection tag".to_string()));
+        }
+    }
+    Ok(())
+}
+
+fn validate_connection_profile(profile: &ConnectionProfile) -> AppResult<()> {
+    validate_id(&profile.id)?;
+
+    if profile.name.trim().is_empty() || profile.name.len() > MAX_NAME_LEN || has_control_chars(&profile.name) {
+        return Err(AppError::InvalidInput("Invalid connection name".to_string()));
+    }
+
+    validate_host_and_port(&profile.host, profile.port)
+        .map_err(AppError::InvalidInput)?;
+
+    if profile.username.trim().is_empty()
+        || profile.username.len() > MAX_USERNAME_LEN
+        || has_control_chars(&profile.username)
+    {
+        return Err(AppError::InvalidInput("Invalid username".to_string()));
+    }
+
+    match profile.auth_method.as_str() {
+        "password" => {}
+        "key" => {
+            let key_id = profile
+                .key_id
+                .as_ref()
+                .ok_or_else(|| AppError::InvalidInput("Key authentication requires key ID".to_string()))?;
+            if key_id.trim().is_empty() || key_id.len() > MAX_KEY_ID_LEN || has_control_chars(key_id) {
+                return Err(AppError::InvalidInput("Invalid key ID".to_string()));
+            }
+        }
+        _ => {
+            return Err(AppError::InvalidInput(
+                "Unsupported authentication method".to_string(),
+            ));
+        }
+    }
+
+    if let Some(password) = profile.encrypted_password.as_ref() {
+        if password.len() > MAX_PASSWORD_LEN || password.contains('\0') {
+            return Err(AppError::InvalidInput("Password is too large or invalid".to_string()));
+        }
+    }
+
+    if let Some(key_id) = profile.key_id.as_ref() {
+        if key_id.len() > MAX_KEY_ID_LEN || has_control_chars(key_id) {
+            return Err(AppError::InvalidInput("Invalid key ID".to_string()));
+        }
+    }
+
+    if let Some(group) = profile.group.as_ref() {
+        if group.len() > MAX_GROUP_LEN || has_control_chars(group) {
+            return Err(AppError::InvalidInput("Invalid group name".to_string()));
+        }
+    }
+
+    if let Some(os) = profile.detected_os.as_ref() {
+        if os.len() > MAX_OS_LEN || has_control_chars(os) {
+            return Err(AppError::InvalidInput("Invalid OS value".to_string()));
+        }
+    }
+
+    validate_tags(&profile.tags)?;
+
+    if let Some(fp) = profile.host_fingerprint.as_ref() {
+        if fp.len() > MAX_FINGERPRINT_LEN || has_control_chars(fp) {
+            return Err(AppError::InvalidInput("Invalid host fingerprint".to_string()));
+        }
+    }
+
+    if let Some(ms) = profile.response_time_ms {
+        if ms > MAX_RESPONSE_TIME_MS {
+            return Err(AppError::InvalidInput(
+                "Response time is out of allowed bounds".to_string(),
+            ));
+        }
+    }
+
+    Ok(())
+}
 
 /// Internal representation stored in the database — contains the encrypted password.
 /// This struct is NEVER serialized to the frontend directly.
@@ -106,13 +237,7 @@ pub struct HostCheckResult {
 
 #[tauri::command]
 pub async fn check_host_status(host: String, port: u16) -> Result<HostCheckResult, String> {
-    // Validate input to prevent malformed hostnames from reaching the network stack.
-    if host.trim().is_empty() || host.len() > 255 || host.contains('/') || host.contains('\\') || host.contains('\0') {
-        return Err("Invalid hostname".to_string());
-    }
-    if port == 0 {
-        return Err("Invalid port".to_string());
-    }
+    validate_host_and_port(&host, port)?;
 
     let addr = format!("{}:{}", host, port);
     let start = std::time::Instant::now();
@@ -135,6 +260,7 @@ pub fn save_connection(
     mut profile: ConnectionProfile,
     state: State<'_, AppState>,
 ) -> AppResult<ConnectionProfileView> {
+    validate_connection_profile(&profile)?;
     state.ensure_database().map_err(|e| AppError::Database(e.to_string()))?;
 
     // If the frontend sent a password, encrypt it.
@@ -210,6 +336,7 @@ pub fn delete_connection(
     id: String,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
+    validate_id(&id)?;
     let db_guard = state.get_db().map_err(|e| AppError::Database(e.to_string()))?;
     let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
     
@@ -233,6 +360,20 @@ pub fn record_connection_session(
     response_time_ms: Option<u32>,
     state: State<'_, AppState>,
 ) -> AppResult<ConnectionProfileView> {
+    validate_id(&id)?;
+    if let Some(ref fp) = fingerprint {
+        if fp.len() > MAX_FINGERPRINT_LEN || has_control_chars(fp) {
+            return Err(AppError::InvalidInput("Invalid host fingerprint".to_string()));
+        }
+    }
+    if let Some(ms) = response_time_ms {
+        if ms > MAX_RESPONSE_TIME_MS {
+            return Err(AppError::InvalidInput(
+                "Response time is out of allowed bounds".to_string(),
+            ));
+        }
+    }
+
     let db_guard = state.get_db().map_err(|e| AppError::Database(e.to_string()))?;
     let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
@@ -274,6 +415,9 @@ pub fn update_connection_tags(
     tags: Vec<String>,
     state: State<'_, AppState>,
 ) -> AppResult<ConnectionProfileView> {
+    validate_id(&id)?;
+    validate_tags(&tags)?;
+
     let db_guard = state.get_db().map_err(|e| AppError::Database(e.to_string()))?;
     let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 
@@ -315,6 +459,11 @@ pub fn update_connection_os(
     os: String,
     state: State<'_, AppState>,
 ) -> AppResult<ConnectionProfileView> {
+    validate_id(&id)?;
+    if os.trim().is_empty() || os.len() > MAX_OS_LEN || has_control_chars(&os) {
+        return Err(AppError::InvalidInput("Invalid OS value".to_string()));
+    }
+
     let db_guard = state.get_db().map_err(|e| AppError::Database(e.to_string()))?;
     let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
     

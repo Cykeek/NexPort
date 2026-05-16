@@ -93,4 +93,5 @@ export const DEFAULT_PREFERENCES = {
   themeName: "default-dark",
   uiThemingEnabled: false,
   colorMode: "dark" as ColorMode,
+  showPublicIp: false,
 } as const;

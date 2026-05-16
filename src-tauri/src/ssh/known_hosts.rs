@@ -27,7 +27,6 @@ fn host_entry(host: &str, port: u16) -> String {
 }
 
 #[allow(dead_code)]
-#[allow(dead_code)]
 pub fn check_known_hosts_path(
     host: &str,
     port: u16,
@@ -156,6 +155,16 @@ pub fn learn_known_hosts_path(
             create_dir_all(parent)
                 .map_err(|e| format!("Failed to create directory for known_hosts: {}", e))?;
         }
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(meta) = std::fs::metadata(parent) {
+                let mut perms = meta.permissions();
+                perms.set_mode(0o700);
+                let _ = std::fs::set_permissions(parent, perms);
+            }
+        }
     }
 
     let key_type = algorithm_to_str(server_public_key.algorithm());
@@ -173,12 +182,24 @@ pub fn learn_known_hosts_path(
     file.write_all(entry.as_bytes())
         .map_err(|e| format!("Failed to write to known_hosts file: {}", e))?;
 
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = std::fs::metadata(path) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o600);
+            let _ = std::fs::set_permissions(path, perms);
+        }
+    }
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::thread_rng;
+    use russh_keys::{Algorithm as RusshAlgorithm, PrivateKey as RusshPrivateKey};
     use std::fs;
 
     #[test]
@@ -225,7 +246,16 @@ mod tests {
     }
 
     fn generate_test_key() -> PublicKey {
-        let key_bytes: Vec<u8> = (0..32).map(|i| i as u8).collect();
-        PublicKey::from_ed25519(key_bytes.try_into().unwrap()).unwrap()
+        let private_key = RusshPrivateKey::random(&mut thread_rng(), RusshAlgorithm::Ed25519)
+            .expect("failed to generate ephemeral test key");
+
+        let openssh_public = private_key
+            .public_key()
+            .to_openssh()
+            .expect("failed to serialize generated test public key")
+            .to_string();
+
+        PublicKey::from_openssh(&openssh_public)
+            .expect("generated test public key must parse with ssh_key")
     }
 }

@@ -10,7 +10,11 @@ import {
   LOCALSTORAGE_KEY,
 } from "@/config/constants";
 import type { ColorMode } from "@/config/constants";
-import { AVAILABLE_THEMES, getThemeByName, getThemeCounterpart } from "@/config/themes";
+import {
+  AVAILABLE_THEMES,
+  getThemeByName,
+  getThemeCounterpart,
+} from "@/config/themes";
 
 /* ─── Interfaces ───────────────────────────────────────────────────────── */
 
@@ -21,6 +25,7 @@ export interface AppearancePreferences {
   themeName: string;
   uiThemingEnabled: boolean;
   colorMode: ColorMode;
+  showPublicIp: boolean;
 }
 
 export interface ImportResult {
@@ -37,6 +42,7 @@ export interface AppearanceState extends AppearancePreferences {
   setThemeName: (name: string) => void;
   setUIThemingEnabled: (enabled: boolean) => void;
   setColorMode: (mode: ColorMode) => void;
+  setShowPublicIp: (enabled: boolean) => void;
   reset: () => void;
   getPreferences: () => AppearancePreferences;
   importPreferences: (raw: unknown) => ImportResult;
@@ -62,7 +68,9 @@ export function validateFontSize(value: unknown): number {
 
 export function validateFontWeight(value: unknown): number {
   const num = Number(value);
-  const validWeights = AVAILABLE_FONT_WEIGHTS.map((w) => w.value) as readonly number[];
+  const validWeights = AVAILABLE_FONT_WEIGHTS.map(
+    (w) => w.value,
+  ) as readonly number[];
   if (!validWeights.includes(num)) {
     return DEFAULT_PREFERENCES.fontWeight;
   }
@@ -104,6 +112,10 @@ export function validatePreferences(raw: unknown): AppearancePreferences {
         ? obj.uiThemingEnabled
         : DEFAULT_PREFERENCES.uiThemingEnabled,
     colorMode: validateColorMode(obj.colorMode),
+    showPublicIp:
+      typeof obj.showPublicIp === "boolean"
+        ? obj.showPublicIp
+        : DEFAULT_PREFERENCES.showPublicIp,
   };
 }
 
@@ -134,7 +146,9 @@ function loadFromLocalStorage(): AppearancePreferences {
     const theme = getThemeByName(prefs.themeName);
     if (theme.variant !== effectiveMode) {
       const counterpart = getThemeCounterpart(prefs.themeName);
-      prefs.themeName = counterpart ?? (effectiveMode === "light" ? "default-light" : "default-dark");
+      prefs.themeName =
+        counterpart ??
+        (effectiveMode === "light" ? "default-light" : "default-dark");
     }
 
     return prefs;
@@ -150,7 +164,9 @@ function loadFromLocalStorage(): AppearancePreferences {
 function resolveEffectiveColorMode(colorMode: ColorMode): "light" | "dark" {
   if (colorMode === "system") {
     if (typeof window !== "undefined") {
-      return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+      return window.matchMedia("(prefers-color-scheme: light)").matches
+        ? "light"
+        : "dark";
     }
     return "dark";
   }
@@ -162,9 +178,11 @@ function persistToLocalStorage(prefs: AppearancePreferences): void {
     const json = JSON.stringify(prefs);
     localStorage.setItem(LOCALSTORAGE_KEY, json);
     // Broadcast to all other Tauri windows (terminal windows)
-    import("@tauri-apps/api/event").then(({ emit }) => {
-      emit("appearance-changed", json);
-    }).catch(() => {});
+    import("@tauri-apps/api/event")
+      .then(({ emit }) => {
+        emit("appearance-changed", json);
+      })
+      .catch(() => {});
   } catch {
     toast.error("Preferences could not be saved");
   }
@@ -188,7 +206,9 @@ export const useAppearanceStore = create<AppearanceState>((set, get) => ({
   },
 
   setFontWeight: (weight: number) => {
-    const validWeights = AVAILABLE_FONT_WEIGHTS.map((w) => w.value) as readonly number[];
+    const validWeights = AVAILABLE_FONT_WEIGHTS.map(
+      (w) => w.value,
+    ) as readonly number[];
     if (!validWeights.includes(weight)) return;
     set({ fontWeight: weight });
     persistToLocalStorage(get().getPreferences());
@@ -214,10 +234,17 @@ export const useAppearanceStore = create<AppearanceState>((set, get) => ({
     const currentTheme = getThemeByName(get().themeName);
     if (currentTheme.variant !== effectiveMode) {
       const counterpart = getThemeCounterpart(get().themeName);
-      const newTheme = counterpart ?? (effectiveMode === "light" ? "default-light" : "default-dark");
+      const newTheme =
+        counterpart ??
+        (effectiveMode === "light" ? "default-light" : "default-dark");
       set({ themeName: newTheme });
     }
 
+    persistToLocalStorage(get().getPreferences());
+  },
+
+  setShowPublicIp: (enabled: boolean) => {
+    set({ showPublicIp: enabled });
     persistToLocalStorage(get().getPreferences());
   },
 
@@ -231,8 +258,24 @@ export const useAppearanceStore = create<AppearanceState>((set, get) => ({
   },
 
   getPreferences: (): AppearancePreferences => {
-    const { fontFamily, fontSize, fontWeight, themeName, uiThemingEnabled, colorMode } = get();
-    return { fontFamily, fontSize, fontWeight, themeName, uiThemingEnabled, colorMode };
+    const {
+      fontFamily,
+      fontSize,
+      fontWeight,
+      themeName,
+      uiThemingEnabled,
+      colorMode,
+      showPublicIp,
+    } = get();
+    return {
+      fontFamily,
+      fontSize,
+      fontWeight,
+      themeName,
+      uiThemingEnabled,
+      colorMode,
+      showPublicIp,
+    };
   },
 
   importPreferences: (raw: unknown): ImportResult => {
@@ -242,23 +285,47 @@ export const useAppearanceStore = create<AppearanceState>((set, get) => ({
     // Determine which fields were reset to defaults
     if (typeof raw === "object" && raw !== null) {
       const obj = raw as Record<string, unknown>;
-      if (obj.fontFamily !== undefined && obj.fontFamily !== validated.fontFamily) {
+      if (
+        obj.fontFamily !== undefined &&
+        obj.fontFamily !== validated.fontFamily
+      ) {
         resetFields.push("fontFamily");
       }
-      if (obj.fontSize !== undefined && Number(obj.fontSize) !== validated.fontSize) {
+      if (
+        obj.fontSize !== undefined &&
+        Number(obj.fontSize) !== validated.fontSize
+      ) {
         resetFields.push("fontSize");
       }
-      if (obj.fontWeight !== undefined && Number(obj.fontWeight) !== validated.fontWeight) {
+      if (
+        obj.fontWeight !== undefined &&
+        Number(obj.fontWeight) !== validated.fontWeight
+      ) {
         resetFields.push("fontWeight");
       }
-      if (obj.themeName !== undefined && obj.themeName !== validated.themeName) {
+      if (
+        obj.themeName !== undefined &&
+        obj.themeName !== validated.themeName
+      ) {
         resetFields.push("themeName");
       }
-      if (obj.uiThemingEnabled !== undefined && obj.uiThemingEnabled !== validated.uiThemingEnabled) {
+      if (
+        obj.uiThemingEnabled !== undefined &&
+        obj.uiThemingEnabled !== validated.uiThemingEnabled
+      ) {
         resetFields.push("uiThemingEnabled");
       }
-      if (obj.colorMode !== undefined && obj.colorMode !== validated.colorMode) {
+      if (
+        obj.colorMode !== undefined &&
+        obj.colorMode !== validated.colorMode
+      ) {
         resetFields.push("colorMode");
+      }
+      if (
+        obj.showPublicIp !== undefined &&
+        obj.showPublicIp !== validated.showPublicIp
+      ) {
+        resetFields.push("showPublicIp");
       }
     }
 

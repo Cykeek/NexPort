@@ -1,9 +1,12 @@
 use std::path::PathBuf;
+use std::fs;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use russh::*;
 use russh::keys::*;
 use zeroize::Zeroize;
+
+const MAX_READ_BYTES_PER_CALL: usize = 512 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct UnknownHostKey {
@@ -91,11 +94,38 @@ pub struct SshSession {
 }
 
 pub(crate) fn get_known_hosts_path() -> PathBuf {
-    let data_dir = dirs::data_local_dir()
+    let local_data_dir = dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("ssh-connect");
-    std::fs::create_dir_all(&data_dir).ok();
-    data_dir.join("known_hosts")
+        .to_path_buf();
+    let data_dir = local_data_dir.join("nexport");
+    let old_data_dir = local_data_dir.join("ssh-connect");
+
+    fs::create_dir_all(&data_dir).ok();
+
+    let known_hosts_path = data_dir.join("known_hosts");
+    let old_known_hosts_path = old_data_dir.join("known_hosts");
+    if !known_hosts_path.exists() && old_known_hosts_path.exists() {
+        if let Err(err) = fs::copy(&old_known_hosts_path, &known_hosts_path) {
+            log::warn!("Failed to migrate known_hosts file to new app directory: {}", err);
+        }
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = fs::metadata(&data_dir) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o700);
+            let _ = fs::set_permissions(&data_dir, perms);
+        }
+        if let Ok(meta) = fs::metadata(&known_hosts_path) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o600);
+            let _ = fs::set_permissions(&known_hosts_path, perms);
+        }
+    }
+
+    known_hosts_path
 }
 
 impl SshSession {
@@ -197,6 +227,7 @@ impl SshSession {
         let ch = self.channel.as_mut().ok_or("No channel available")?;
         
         let mut output = String::new();
+        let mut total_bytes_read: usize = 0;
         let mut got_eof = false;
         let start = std::time::Instant::now();
         
@@ -210,12 +241,42 @@ impl SshSession {
                 Ok(Some(msg)) => {
                     match msg {
                         ChannelMsg::Data { data } => {
-                            let text = String::from_utf8_lossy(data.as_ref()).to_string();
+                            let remaining = MAX_READ_BYTES_PER_CALL.saturating_sub(total_bytes_read);
+                            if remaining == 0 {
+                                break;
+                            }
+
+                            let raw = data.as_ref();
+                            let chunk = if raw.len() > remaining {
+                                &raw[..remaining]
+                            } else {
+                                raw
+                            };
+                            total_bytes_read = total_bytes_read.saturating_add(chunk.len());
+                            let text = String::from_utf8_lossy(chunk).to_string();
                             output.push_str(&text);
+                            if raw.len() > remaining {
+                                break;
+                            }
                         }
                         ChannelMsg::ExtendedData { data, .. } => {
-                            let text = String::from_utf8_lossy(data.as_ref()).to_string();
+                            let remaining = MAX_READ_BYTES_PER_CALL.saturating_sub(total_bytes_read);
+                            if remaining == 0 {
+                                break;
+                            }
+
+                            let raw = data.as_ref();
+                            let chunk = if raw.len() > remaining {
+                                &raw[..remaining]
+                            } else {
+                                raw
+                            };
+                            total_bytes_read = total_bytes_read.saturating_add(chunk.len());
+                            let text = String::from_utf8_lossy(chunk).to_string();
                             output.push_str(&text);
+                            if raw.len() > remaining {
+                                break;
+                            }
                         }
                         ChannelMsg::Eof => {
                             got_eof = true;

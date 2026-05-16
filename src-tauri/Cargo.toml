@@ -1,6 +1,6 @@
 [package]
 name = "nexport"
-version = "0.3.2-beta"
+version = "0.4.0-beta"
 description = "A Tauri SSH Client"
 authors = ["you"]
 license = "MIT"
@@ -44,3 +44,4 @@ uuid = { version = "1", features = ["v4"] }
 log = "0.4"
 dirs = "6"
 reqwest = "0.13"
+sysinfo = "0.33"

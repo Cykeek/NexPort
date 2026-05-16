@@ -6,6 +6,7 @@ import { FontSizeControl } from "./font-size-control";
 import { FontWeightControl } from "./font-weight-control";
 import { ThemeSelector } from "./theme-selector";
 import { UIThemeToggle } from "./ui-theme-toggle";
+import { NetworkIpToggle } from "./network-ip-toggle";
 import { ThemeShareControls } from "./theme-share-controls";
 import { ColorModeSelector } from "./color-mode-selector";
 
@@ -17,6 +18,7 @@ export function AppearanceSection() {
       </div>
 
       <ColorModeSelector />
+      <NetworkIpToggle />
       <TerminalPreview />
       <FontFamilySelector />
       <FontSizeControl />

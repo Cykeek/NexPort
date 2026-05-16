@@ -12,6 +12,44 @@ use russh_keys::Algorithm as RusshAlgorithm;
 use base64::Engine;
 
 const KEYS_TABLE: TableDefinition<&str, &str> = TableDefinition::new("keys");
+const MAX_KEY_ID_LEN: usize = 128;
+const MAX_KEY_NAME_LEN: usize = 128;
+const MAX_PRIVATE_KEY_BYTES: usize = 64 * 1024;
+
+fn has_control_chars(value: &str) -> bool {
+    value.chars().any(|c| c.is_control())
+}
+
+fn validate_key_id(id: &str) -> AppResult<()> {
+    if id.trim().is_empty() || id.len() > MAX_KEY_ID_LEN || has_control_chars(id) {
+        return Err(AppError::InvalidInput("Invalid key ID".to_string()));
+    }
+    Ok(())
+}
+
+fn validate_key_name(name: &str) -> AppResult<()> {
+    if name.trim().is_empty() || name.len() > MAX_KEY_NAME_LEN || has_control_chars(name) {
+        return Err(AppError::InvalidInput("Invalid key name".to_string()));
+    }
+    Ok(())
+}
+
+fn validate_key_data_input(key_data: &str) -> AppResult<()> {
+    if key_data.trim().is_empty() {
+        return Err(AppError::InvalidInput("Key data cannot be empty".to_string()));
+    }
+    if key_data.as_bytes().len() > MAX_PRIVATE_KEY_BYTES {
+        return Err(AppError::InvalidInput(
+            "Key data exceeds allowed size".to_string(),
+        ));
+    }
+    if key_data.contains('\0') {
+        return Err(AppError::InvalidInput(
+            "Key data contains invalid null byte".to_string(),
+        ));
+    }
+    Ok(())
+}
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -278,6 +316,8 @@ fn normalize_pem_wrapping(pem: &str) -> String {
 
 #[tauri::command]
 pub async fn generate_key(name: String, key_type: String, _passphrase: Option<String>, state: State<'_, AppState>) -> AppResult<KeyInfo> {
+    validate_key_name(&name)?;
+
     // RSA key generation is CPU-bound and can take several seconds.
     // Offload to a blocking thread to avoid starving the async runtime.
     let algorithm = match key_type.as_str() {
@@ -307,10 +347,19 @@ pub async fn generate_key(name: String, key_type: String, _passphrase: Option<St
 
 #[tauri::command]
 pub async fn import_key(name: String, key_data: String, state: State<'_, AppState>) -> AppResult<KeyInfo> {
-    let normalized_key = key_data.trim().to_string();
+    validate_key_name(&name)?;
+    validate_key_data_input(&key_data)?;
+
+    let mut normalized_key = key_data.trim().to_string();
     
     // Decode to verify it's valid and get fingerprint
-    let private_key = parse_private_key(&normalized_key).map_err(AppError::Key)?;
+    let private_key = match parse_private_key(&normalized_key) {
+        Ok(key) => key,
+        Err(err) => {
+            normalized_key.zeroize();
+            return Err(AppError::Key(err));
+        }
+    };
     let public_key = private_key.public_key();
     let fingerprint = public_key.fingerprint(Default::default()).to_string();
     
@@ -326,6 +375,7 @@ pub async fn import_key(name: String, key_data: String, state: State<'_, AppStat
     
     // Encrypt the private key before storing
     let encrypted_key_data = encrypt_key_data(&state.vault, &normalized_key)?;
+    normalized_key.zeroize();
     
     let id = format!("key_{}", uuid::Uuid::new_v4());
     save_key_to_db(&state, &id, &StoredKey { id: id.clone(), name: name.clone(), key_type: key_type.to_string(), fingerprint: fingerprint.clone(), encrypted_key_data })?;
@@ -357,6 +407,8 @@ pub async fn list_keys(state: State<'_, AppState>) -> AppResult<Vec<KeyInfo>> {
 
 #[tauri::command]
 pub async fn delete_key(id: String, state: State<'_, AppState>) -> AppResult<()> {
+    validate_key_id(&id)?;
+
     let db_guard = state.get_db().map_err(|e| AppError::Database(e.to_string()))?;
     let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
     
@@ -368,6 +420,9 @@ pub async fn delete_key(id: String, state: State<'_, AppState>) -> AppResult<()>
 
 #[tauri::command]
 pub async fn update_key(id: String, name: String, state: State<'_, AppState>) -> AppResult<()> {
+    validate_key_id(&id)?;
+    validate_key_name(&name)?;
+
     let db_guard = state.get_db().map_err(|e| AppError::Database(e.to_string()))?;
     let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
     
@@ -388,8 +443,18 @@ pub async fn update_key(id: String, name: String, state: State<'_, AppState>) ->
 
 #[tauri::command]
 pub async fn update_key_with_new_key(id: String, name: String, key_data: String, state: State<'_, AppState>) -> AppResult<()> {
-    let normalized_key = key_data.trim().to_string();
-    let private_key = parse_private_key(&normalized_key).map_err(AppError::Key)?;
+    validate_key_id(&id)?;
+    validate_key_name(&name)?;
+    validate_key_data_input(&key_data)?;
+
+    let mut normalized_key = key_data.trim().to_string();
+    let private_key = match parse_private_key(&normalized_key) {
+        Ok(key) => key,
+        Err(err) => {
+            normalized_key.zeroize();
+            return Err(AppError::Key(err));
+        }
+    };
     let public_key = private_key.public_key();
     let fingerprint = public_key.fingerprint(Default::default()).to_string();
     
@@ -403,6 +468,7 @@ pub async fn update_key_with_new_key(id: String, name: String, key_data: String,
     
     // Encrypt the new key data
     let encrypted_key_data = encrypt_key_data(&state.vault, &normalized_key)?;
+    normalized_key.zeroize();
     
     let db_guard = state.get_db().map_err(|e| AppError::Database(e.to_string()))?;
     let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
@@ -431,6 +497,8 @@ pub async fn update_key_with_new_key(id: String, name: String, key_data: String,
 
 #[tauri::command]
 pub async fn get_key_data(id: String, state: State<'_, AppState>) -> AppResult<KeyData> {
+    validate_key_id(&id)?;
+
     let db_guard = state.get_db().map_err(|e| AppError::Database(e.to_string()))?;
     let db = db_guard.as_ref().ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
 

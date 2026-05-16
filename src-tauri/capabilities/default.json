@@ -16,20 +16,13 @@
     "core:event:default",
     "core:event:allow-emit",
     "core:event:allow-listen",
-    "fs:default",
-    "fs:allow-read-file",
-    "fs:allow-write-file",
-    "fs:allow-read-dir",
-    "fs:allow-mkdir",
-    "fs:allow-remove",
-    "fs:allow-rename",
-    "dialog:default",
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file",
     "dialog:allow-open",
     "dialog:allow-save",
     "dialog:allow-message",
-    "shell:default",
     "shell:allow-open",
     "updater:default",
-    "process:default"
+    "process:allow-restart"
   ]
 }
