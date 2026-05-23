@@ -1,6 +1,10 @@
-use std::ffi::CString;
-
 use super::types::DeviceSample;
+use core_foundation_sys::dictionary::CFDictionaryRef;
+
+#[allow(non_camel_case_types)]
+type io_object_t = u32;
+#[allow(non_camel_case_types)]
+type io_iterator_t = u32;
 
 /// Provider using IOKit's IOBlockStorageDriver "Statistics" dictionary.
 ///
@@ -10,7 +14,6 @@ use super::types::DeviceSample;
 pub struct IOKitProvider;
 
 // IOKit / CoreFoundation constants
-const KIO_MASTER_PORT_DEFAULT: *mut libc::c_void = std::ptr::null_mut();
 const KIOSERVICE_PLANE: &[u8] = b"IOService\0";
 const KIO_BSD_NAME_KEY: &[u8] = b"BSD Name\0";
 const KIO_BLOCK_STORAGE_DRIVER_STATISTICS_KEY: &[u8] = b"Statistics\0";
@@ -31,16 +34,11 @@ impl IOKitProvider {
     }
 
     unsafe fn sample_inner(&self) -> std::io::Result<Vec<DeviceSample>> {
-        use core_foundation_sys::base::{
-            CFAllocatorRef, CFRelease, CFTypeRef, kCFAllocatorDefault,
+        use core_foundation_sys::base::{CFRelease, kCFAllocatorDefault};
+        use core_foundation_sys::dictionary::{
+            CFDictionaryGetValue, CFDictionaryRef, CFMutableDictionaryRef,
         };
-        use core_foundation_sys::dictionary::CFDictionaryGetValue;
-        use core_foundation_sys::number::{
-            CFNumberGetValue, CFNumberRef, kCFNumberSInt64Type,
-        };
-        use core_foundation_sys::string::{
-            CFSTR, CFStringGetCString, CFStringRef, kCFStringEncodingUTF8,
-        };
+        use core_foundation_sys::string::{CFStringCreateWithCString, kCFStringEncodingUTF8};
         use io_kit_sys::*;
 
         let mut devices = Vec::new();
@@ -53,7 +51,7 @@ impl IOKitProvider {
 
         let mut drive_iter: io_object_t = 0;
         let kr = IOServiceGetMatchingServices(
-            KIO_MASTER_PORT_DEFAULT,
+            0,
             matching,
             &mut drive_iter,
         );
@@ -81,8 +79,13 @@ impl IOKitProvider {
             );
 
             if kr == 0 && !props.is_null() {
-                let stats_key = CFSTR(KIO_BLOCK_STORAGE_DRIVER_STATISTICS_KEY.as_ptr() as *const libc::c_char);
+                let stats_key = CFStringCreateWithCString(
+                    kCFAllocatorDefault,
+                    KIO_BLOCK_STORAGE_DRIVER_STATISTICS_KEY.as_ptr() as *const i8,
+                    kCFStringEncodingUTF8,
+                );
                 let stats_dict = CFDictionaryGetValue(props, stats_key as *const libc::c_void) as CFDictionaryRef;
+                CFRelease(stats_key as *const libc::c_void);
 
                 if !stats_dict.is_null() {
                     let device_name = bsd_name.unwrap_or_else(|| format!("unknown"));
@@ -104,11 +107,9 @@ impl IOKitProvider {
     unsafe fn get_bsd_name(&self, drive: io_object_t) -> Option<String> {
         use core_foundation_sys::base::{CFRelease, kCFAllocatorDefault};
         use core_foundation_sys::string::{
-            CFStringGetCString, CFStringRef, kCFStringEncodingUTF8,
+            CFStringCreateWithCString, CFStringGetCString, CFStringRef, kCFStringEncodingUTF8,
         };
         use io_kit_sys::*;
-
-        let bsd_name_key = CFSTR(KIO_BSD_NAME_KEY.as_ptr() as *const libc::c_char);
 
         // The IOBlockStorageDriver has IOMedia as its provider (child)
         let mut media_iter: io_iterator_t = 0;
@@ -120,6 +121,12 @@ impl IOKitProvider {
         if kr != 0 || media_iter == 0 {
             return None;
         }
+
+        let bsd_name_key = CFStringCreateWithCString(
+            kCFAllocatorDefault,
+            KIO_BSD_NAME_KEY.as_ptr() as *const i8,
+            kCFStringEncodingUTF8,
+        );
 
         let mut result = None;
         loop {
@@ -141,7 +148,7 @@ impl IOKitProvider {
                     let success = CFStringGetCString(
                         name_ref as CFStringRef,
                         buf.as_mut_ptr(),
-                        buf.len() as libc::c_long,
+                        buf.len() as isize,
                         kCFStringEncodingUTF8,
                     );
                     if success != 0 {
@@ -164,6 +171,7 @@ impl IOKitProvider {
         }
 
         IOObjectRelease(media_iter);
+        CFRelease(bsd_name_key as *const libc::c_void);
         result
     }
 
@@ -173,16 +181,22 @@ impl IOKitProvider {
         stats: CFDictionaryRef,
         name: String,
     ) -> DeviceSample {
+        use core_foundation_sys::base::{CFRelease, kCFAllocatorDefault};
         use core_foundation_sys::dictionary::CFDictionaryGetValue;
         use core_foundation_sys::number::{
             CFNumberGetValue, CFNumberRef, kCFNumberSInt64Type,
         };
-        use core_foundation_sys::string::CFSTR;
+        use core_foundation_sys::string::{CFStringCreateWithCString, kCFStringEncodingUTF8};
 
         macro_rules! get_stat {
             ($key:expr) => {{
-                let key = CFSTR($key.as_ptr() as *const libc::c_char);
+                let key = CFStringCreateWithCString(
+                    kCFAllocatorDefault,
+                    $key.as_ptr() as *const i8,
+                    kCFStringEncodingUTF8,
+                );
                 let num = CFDictionaryGetValue(stats, key as *const libc::c_void) as CFNumberRef;
+                CFRelease(key as *const libc::c_void);
                 let mut val: i64 = 0;
                 if !num.is_null() {
                     CFNumberGetValue(num, kCFNumberSInt64Type, &mut val as *mut i64 as *mut libc::c_void);
