@@ -72,7 +72,7 @@ impl DevstatProvider {
 
         for i in 0..count {
             let offset = i * devstat_size;
-            let ds: &libc::devstat = unsafe { &*(data[offset..].as_ptr() as *const libc::devstat) };
+            let ds: libc::devstat = unsafe { std::ptr::read_unaligned(data[offset..].as_ptr() as *const libc::devstat) };
 
             // Skip non-physical devices
             let name = unsafe { c_char_array_to_string(&ds.device_name) };
@@ -84,8 +84,8 @@ impl DevstatProvider {
 
             let bintime_to_ns = |bt: &libc::bintime| -> u64 {
                 let sec = bt.sec.max(0) as u64;
-                // frac is in units of 2^-64 seconds
-                let frac_ns = (bt.frac as f64 * 5.421010862427522e-20 * 1_000_000_000.0) as u64;
+                let frac_ns = (bt.frac as f64 * 5.421010862427522e-20 * 1_000_000_000.0)
+                    .clamp(0.0, u64::MAX as f64) as u64;
                 sec * 1_000_000_000 + frac_ns
             };
 

@@ -59,9 +59,13 @@ export function ConnectionsPage() {
 
   const executeDelete = async () => {
     if (!connectionToDelete) return;
-    await remove(connectionToDelete.id);
-    toast.success("Connection deleted");
-    setConnectionToDelete(null);
+    try {
+      await remove(connectionToDelete.id);
+      toast.success("Connection deleted");
+      setConnectionToDelete(null);
+    } catch {
+      toast.error("Failed to delete connection");
+    }
   };
 
   // Apply status filter on top of search filter
@@ -72,7 +76,7 @@ export function ConnectionsPage() {
   });
 
   return (
-    <div className="connections-page">
+    <div className="connections-page page-fade-in">
       {/* Loading State */}
       {isLoading ? (
         <div className="conn-loading">

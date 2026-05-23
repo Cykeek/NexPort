@@ -131,7 +131,7 @@ export function SettingsPage() {
   };
 
   return (
-    <div className="settings-page">
+    <div className="settings-page page-fade-in">
       <h1 className="settings-title">Settings</h1>
 
       <div className="settings-layout">

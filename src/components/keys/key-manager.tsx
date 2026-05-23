@@ -115,12 +115,16 @@ export function KeyManager() {
     setDeleteDialogOpen(true);
   };
 
-  const executeDelete = () => {
+  const executeDelete = async () => {
     if (!keyToDelete) return;
-    deleteKey(keyToDelete.id);
-    toast.success("Key deleted");
-    setDeleteDialogOpen(false);
-    setKeyToDelete(null);
+    try {
+      await deleteKey(keyToDelete.id);
+      toast.success("Key deleted");
+      setDeleteDialogOpen(false);
+      setKeyToDelete(null);
+    } catch {
+      toast.error("Failed to delete key");
+    }
   };
 
   const cancelDelete = () => {
@@ -149,7 +153,7 @@ export function KeyManager() {
   };
 
   return (
-    <div className="keys-page">
+    <div className="keys-page page-fade-in">
       <div className="keys-header">
         <div className="keys-header-left">
           <h1 className="keys-header-title">SSH Keys</h1>

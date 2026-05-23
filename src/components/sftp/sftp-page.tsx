@@ -1263,6 +1263,7 @@ export function SftpPage() {
   };
 
   const cancelTransfer = async (type: "upload" | "download") => {
+    if (!sessionId) return;
     const setter = type === "upload" ? setUpload : setDownload;
     const cancelApi =
       type === "upload" ? sftpApi.cancelUpload : sftpApi.cancelDownload;
@@ -1275,7 +1276,7 @@ export function SftpPage() {
       };
     });
     try {
-      await cancelApi(sessionId!);
+      await cancelApi(sessionId);
     } catch {
       /* cleanup handled by finally in upload/download functions */
     }
@@ -1313,7 +1314,8 @@ export function SftpPage() {
 
         try {
           if (pane === "remote") {
-            await sftpApi.deleteRemotePath(sessionId!, entry.path, entry.isDir);
+            if (!sessionId) return;
+            await sftpApi.deleteRemotePath(sessionId, entry.path, entry.isDir);
             if (selectedRemotePath === entry.path) setSelectedRemotePath(null);
             await loadRemoteDir(remotePath);
           } else {
@@ -1520,7 +1522,7 @@ export function SftpPage() {
   );
 
   return (
-    <div className="sftp-page--minimal">
+    <div className="sftp-page--minimal page-fade-in">
       {/* Header */}
       <div className="sftp-page-header--minimal">
         <h1 className="sftp-page-title--minimal">NexPort</h1>

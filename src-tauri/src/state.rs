@@ -112,8 +112,11 @@ fn derive_master_key_from_salt(salt_path: &std::path::Path) -> Result<[u8; 32], 
     let password_hash = argon2
         .hash_password(hostname_str.as_bytes(), &salt)
         .map_err(|e| e.to_string())?;
-    let hash = password_hash.hash.unwrap();
+    let hash = password_hash.hash.ok_or_else(|| "Argon2 output missing hash field".to_string())?;
     let hash_bytes = hash.as_bytes();
+    if hash_bytes.len() < 32 {
+        return Err("Argon2 hash too short for key derivation".into());
+    }
     let mut key = [0u8; 32];
     key.copy_from_slice(&hash_bytes[..32]);
     Ok(key)
@@ -222,7 +225,11 @@ fn migrate_encrypted_data(
 
 fn encrypt_with_vault(vault: &Vault, plaintext: &str) -> String {
     use base64::{engine::general_purpose::STANDARD, Engine};
-    let encrypted = vault.encrypt(plaintext.as_bytes()).unwrap_or_default();
+    let encrypted = vault.encrypt(plaintext.as_bytes())
+        .unwrap_or_else(|e| {
+            log::error!("Vault encryption failed: {}", e);
+            Vec::new()
+        });
     STANDARD.encode(&encrypted)
 }
 

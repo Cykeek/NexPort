@@ -168,6 +168,10 @@ fn normalize_remote_dir(path: &str) -> String {
 }
 
 fn join_remote_path(dir: &str, child: &str) -> String {
+    // Reject path traversal components
+    if child.split('/').any(|c| c == ".." || c == ".") {
+        return normalize_remote_dir(dir);
+    }
     let d = normalize_remote_dir(dir);
     match d.as_str() {
         "/" => format!("/{}", child),
@@ -729,7 +733,10 @@ pub async fn sftp_upload_file(
             let _ = conn.session.remove_file(&remote_path).await;
             return Err(AppError::InvalidInput("Upload canceled by user".to_string()));
         }
-        Err(e) => return Err(e),
+        Err(e) => {
+            let _ = remote_file.shutdown().await;
+            return Err(e);
+        }
     }
 
     remote_file.shutdown().await.map_err(|e| AppError::SshConnection(e.to_string()))?;
@@ -815,7 +822,10 @@ pub async fn sftp_download_file(
             let _ = fs::remove_file(&local_file_path);
             return Err(AppError::InvalidInput("Download canceled by user".to_string()));
         }
-        Err(e) => return Err(e),
+        Err(e) => {
+            let _ = remote_file.shutdown().await;
+            return Err(e);
+        }
     }
 
     local_file.flush().map_err(|e| AppError::Io(e))?;
@@ -1082,7 +1092,10 @@ pub async fn sftp_upload_dir(
                 rollback(&conn.session, &uploaded_files, &created_dirs).await;
                 return Err(AppError::InvalidInput("Upload canceled by user".to_string()));
             }
-            Err(e) => return Err(e),
+            Err(e) => {
+                let _ = remote_file.shutdown().await;
+                return Err(e);
+            }
         }
 
         let _ = remote_file.shutdown().await;
@@ -1218,21 +1231,24 @@ pub async fn sftp_delete_local_path(
 ) -> AppResult<()> {
     validate_path(&path, "local path")?;
     let local_path = PathBuf::from(&path);
-    if !local_path.exists() {
+    // Canonicalize to resolve .. traversal and symlinks
+    let canonical = local_path.canonicalize()
+        .map_err(|_| AppError::InvalidInput("Path does not exist".to_string()))?;
+    if !canonical.exists() {
         return Err(AppError::InvalidInput("Path does not exist".to_string()));
     }
 
     let cancel_flag = init_cancel_flag_in_map(&state.sftp_delete_cancellation, &path);
 
     if is_dir {
-        let root_name = local_path.file_name()
+        let root_name = canonical.file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| path.clone());
         let mut tracker = DeleteProgressTracker::new();
 
         tracker.emit(&app, &root_name, 0, 0, 1, 0, 0, 1, "scanning");
 
-        let (files, dirs, total_bytes) = match collect_local_delete_entries(&local_path, &cancel_flag, &app, &mut tracker) {
+        let (files, dirs, total_bytes) = match collect_local_delete_entries(&canonical, &cancel_flag, &app, &mut tracker) {
             Ok(entries) => entries,
             Err(error) => {
                 state.sftp_delete_cancellation.remove(&path);
@@ -1288,7 +1304,7 @@ pub async fn sftp_delete_local_path(
                 }
             }
 
-            fs::remove_dir_all(&local_path).map_err(|e| AppError::Io(e))?;
+            fs::remove_dir_all(&canonical).map_err(|e| AppError::Io(e))?;
             items_deleted = total_items;
 
             tracker.emit(
@@ -1304,16 +1320,16 @@ pub async fn sftp_delete_local_path(
             );
         }
     } else {
-        let file_name = local_path.file_name()
+        let file_name = canonical.file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| path.clone());
-        let total_bytes = local_path.metadata().ok().map(|m| m.len()).unwrap_or(0);
+        let total_bytes = canonical.metadata().ok().map(|m| m.len()).unwrap_or(0);
         let mut tracker = DeleteProgressTracker::new();
         let display_total = total_bytes.max(1);
 
         tracker.emit(&app, &file_name, 0, 0, display_total, 1, 0, display_total, "deleting");
 
-        fs::remove_file(&local_path).map_err(|e| AppError::Io(e))?;
+        fs::remove_file(&canonical).map_err(|e| AppError::Io(e))?;
 
         tracker.emit(
             &app,
@@ -1389,7 +1405,13 @@ pub async fn sftp_rename_remote(
 pub fn sftp_rename_local(old_path: String, new_path: String) -> AppResult<()> {
     validate_path(&old_path, "old path")?;
     validate_path(&new_path, "new path")?;
-    fs::rename(&old_path, &new_path).map_err(AppError::Io)?;
+    let old_canonical = std::fs::canonicalize(&old_path).map_err(|e| AppError::Io(e))?;
+    // Prevent traversal in the new path: reject parent-dir components
+    let new_pb = PathBuf::from(&new_path);
+    if new_pb.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        return Err(AppError::InvalidInput("New path cannot contain parent directory references".to_string()));
+    }
+    fs::rename(&old_canonical, &new_pb).map_err(AppError::Io)?;
     Ok(())
 }
 

@@ -1922,7 +1922,7 @@ input::placeholder {
     border-radius: 12px;
 }
 
-/* Page Transition Animation */
+/* Page Transition Animation — add .page-fade-in to any page root element */
 @keyframes fadeIn {
     from {
         opacity: 0;
@@ -1931,12 +1931,7 @@ input::placeholder {
         opacity: 1;
     }
 }
-.connections-page,
-.keys-page,
-.settings-page {
-    animation: fadeIn 0.8s ease both;
-}
-.settings-content {
+.page-fade-in {
     animation: fadeIn 0.8s ease both;
 }
 
