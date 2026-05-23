@@ -1,5 +1,6 @@
 mod commands;
 mod crypto;
+mod diskio;
 mod error;
 mod ssh;
 mod state;
@@ -74,6 +75,27 @@ pub fn run() {
             commands::utils::fetch_url,
             commands::utils::get_build_commit,
             commands::utils::get_network_counters,
+            commands::sftp::sftp_connect,
+            commands::sftp::sftp_disconnect,
+            commands::sftp::sftp_list_remote_dir,
+            commands::sftp::sftp_list_local_dir,
+            commands::sftp::sftp_list_local_drives,
+            commands::sftp::sftp_get_remote_home,
+            commands::sftp::sftp_upload_file,
+            commands::sftp::sftp_cancel_upload,
+            commands::sftp::sftp_cancel_download,
+            commands::sftp::sftp_download_file,
+            commands::sftp::sftp_upload_dir,
+            commands::sftp::sftp_download_dir,
+            commands::sftp::sftp_mkdir_remote,
+            commands::sftp::sftp_delete_remote_path,
+            commands::sftp::sftp_delete_local_path,
+            commands::sftp::sftp_cancel_delete,
+            commands::sftp::sftp_rename_remote,
+            commands::sftp::sftp_rename_local,
+            commands::sftp::sftp_stat_remote,
+            commands::sftp::sftp_mkdir_local,
+            diskio::sample_disk_io,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

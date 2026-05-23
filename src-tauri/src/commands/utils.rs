@@ -1,7 +1,112 @@
+use crate::crypto::{decrypt_field, decrypt_key_data};
 use crate::error::{AppError, AppResult};
+use crate::state::AppState;
 use reqwest::{redirect::Policy, Client, Url};
 use sysinfo::Networks;
 use std::time::Duration;
+use tauri::State;
+
+pub const CONNECTIONS_TABLE: redb::TableDefinition<&str, &str> = redb::TableDefinition::new("connections");
+pub const KEYS_TABLE: redb::TableDefinition<&str, &str> = redb::TableDefinition::new("keys");
+
+pub fn has_control_chars(input: &str) -> bool {
+    input.chars().any(|c| c.is_control())
+}
+
+pub fn validate_identifier(value: &str, field: &str, max_len: usize) -> AppResult<()> {
+    if value.trim().is_empty() || value.len() > max_len || has_control_chars(value) {
+        return Err(AppError::InvalidInput(format!("Invalid {}", field)));
+    }
+    Ok(())
+}
+
+pub struct ConnectionCredentials {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub password: Option<String>,
+    pub key_data: Option<String>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoredKey {
+    #[allow(dead_code)]
+    pub id: String,
+    #[allow(dead_code)]
+    pub name: String,
+    #[allow(dead_code)]
+    pub key_type: String,
+    #[allow(dead_code)]
+    pub fingerprint: String,
+    pub encrypted_key_data: String,
+}
+
+pub fn load_connection_credentials(
+    state: &State<'_, AppState>,
+    connection_id: &str,
+    max_connection_id_len: usize,
+) -> AppResult<ConnectionCredentials> {
+    validate_identifier(connection_id, "connection ID", max_connection_id_len)?;
+
+    let db_guard = state.get_db()
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    let db = db_guard.as_ref()
+        .ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
+
+    let read_txn = db.begin_read()
+        .map_err(|e| AppError::Database(e.to_string()))?;
+    let connections_table = read_txn.open_table(CONNECTIONS_TABLE)
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    let value = connections_table.get(connection_id)
+        .map_err(|e| AppError::Database(e.to_string()))?
+        .ok_or_else(|| AppError::Database("Connection not found".to_string()))?;
+
+    let profile: crate::commands::connections::ConnectionProfile = serde_json::from_str(value.value())
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+    let password = if let Some(ref encrypted) = profile.encrypted_password {
+        if !encrypted.is_empty() {
+            Some(decrypt_field(&state.vault, encrypted)
+                .map_err(|e| AppError::Vault(format!("Failed to decrypt password: {}", e)))?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let key_data = if let Some(ref key_id) = profile.key_id {
+        let keys_table = read_txn.open_table(KEYS_TABLE)
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let key_value = keys_table.get(key_id.as_str())
+            .map_err(|e| AppError::Database(e.to_string()))?
+            .ok_or_else(|| AppError::Database("Key not found".to_string()))?;
+
+        let stored_key: StoredKey = serde_json::from_str(key_value.value())
+            .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let mut decrypted = decrypt_key_data(&state.vault, &stored_key.encrypted_key_data)
+            .map_err(|e| AppError::Vault(format!("Failed to decrypt SSH key: {}", e)))?;
+
+        if !decrypted.ends_with('\n') {
+            decrypted.push('\n');
+        }
+        Some(decrypted)
+    } else {
+        None
+    };
+
+    Ok(ConnectionCredentials {
+        host: profile.host,
+        port: profile.port,
+        username: profile.username,
+        password,
+        key_data,
+    })
+}
 
 const STABLE_MANIFEST_URL: &str =
     "https://github.com/Cykeek/NexPort/releases/latest/download/latest.json";

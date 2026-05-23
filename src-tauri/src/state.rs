@@ -1,16 +1,18 @@
 use crate::ssh::session::SshSession;
+use crate::commands::sftp::SftpConnection;
+use crate::diskio::{DiskSpeedCache, ThroughputSampler};
 use crate::vault::encryptor::Vault;
+use crate::commands::utils::{CONNECTIONS_TABLE, KEYS_TABLE};
 use dashmap::DashMap;
 use rand::RngCore;
 use redb::{Database, ReadableTable, TableDefinition};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::sync::Mutex as TokioMutex;
 
-const CONNECTIONS_TABLE: TableDefinition<&str, &str> = TableDefinition::new("connections");
-const KEYS_TABLE: TableDefinition<&str, &str> = TableDefinition::new("keys");
 const MASTER_KEY_FILENAME: &str = "master_key";
 const OLD_SALT_FILENAME: &str = "master_salt";
 const SCHEMA_TABLE: TableDefinition<&str, u64> = TableDefinition::new("schema_version");
@@ -18,8 +20,14 @@ const CURRENT_SCHEMA_VERSION: u64 = 2;
 
 pub struct AppState {
     pub sessions: DashMap<String, Arc<TokioMutex<SshSession>>>,
+    pub sftp_sessions: DashMap<String, Arc<TokioMutex<SftpConnection>>>,
+    pub sftp_upload_cancellation: DashMap<String, Arc<AtomicBool>>,
+    pub sftp_download_cancellation: DashMap<String, Arc<AtomicBool>>,
+    pub sftp_delete_cancellation: DashMap<String, Arc<AtomicBool>>,
     pub db: Mutex<Option<Database>>,
     pub vault: Arc<Mutex<Vault>>,
+    pub disk_io_sampler: Mutex<ThroughputSampler>,
+    pub disk_speed_cache: Mutex<DiskSpeedCache>,
     db_path: PathBuf,
 }
 
@@ -316,12 +324,37 @@ impl AppState {
         let master_key = load_or_generate_master_key(&key_path, &db_path)
             .expect("Failed to load or generate master key — app cannot start securely");
 
+        let disk_io_sampler = match ThroughputSampler::new() {
+            Ok(s) => Mutex::new(s),
+            Err(e) => {
+                log::warn!("Failed to initialize disk I/O sampler: {}", e);
+                // Create a dummy sampler that always returns empty results.
+                // This allows the app to function on unsupported platforms.
+                let dummy: Box<dyn crate::diskio::DiskIoProvider> =
+                    Box::new(crate::diskio::DummyProvider::new());
+                let dummy_sampler = crate::diskio::ThroughputSampler::with_provider(dummy);
+                Mutex::new(dummy_sampler)
+            }
+        };
+
         Self {
             sessions: DashMap::new(),
+            sftp_sessions: DashMap::new(),
+            sftp_upload_cancellation: DashMap::new(),
+            sftp_download_cancellation: DashMap::new(),
+            sftp_delete_cancellation: DashMap::new(),
             db: Mutex::new(None),
             vault: Arc::new(Mutex::new(Vault::new(&master_key))),
+            disk_io_sampler,
+            disk_speed_cache: Mutex::new(DiskSpeedCache::new()),
             db_path,
         }
+    }
+
+    pub fn get_disk_speed(&self) -> Option<f64> {
+        let mut cache = self.disk_speed_cache.lock().ok()?;
+        let mut sampler = self.disk_io_sampler.lock().ok()?;
+        cache.get(&mut sampler)
     }
 
     pub fn ensure_database(&self) -> Result<(), Box<dyn std::error::Error>> {

@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use redb::{ReadableTable, TableDefinition};
+use redb::ReadableTable;
 use crate::state::AppState;
 use crate::error::{AppResult, AppError};
 use crate::crypto::encrypt_field;
+use crate::commands::utils::{has_control_chars, CONNECTIONS_TABLE};
 use std::time::Duration;
 
-const CONNECTIONS_TABLE: TableDefinition<&str, &str> = TableDefinition::new("connections");
 const MAX_CONNECTION_ID_LEN: usize = 128;
 const MAX_NAME_LEN: usize = 128;
 const MAX_USERNAME_LEN: usize = 128;
@@ -18,10 +18,6 @@ const MAX_TAGS: usize = 20;
 const MAX_TAG_LEN: usize = 32;
 const MAX_FINGERPRINT_LEN: usize = 256;
 const MAX_RESPONSE_TIME_MS: u32 = 120_000;
-
-fn has_control_chars(value: &str) -> bool {
-    value.chars().any(|c| c.is_control())
-}
 
 fn validate_id(id: &str) -> AppResult<()> {
     if id.trim().is_empty() || id.len() > MAX_CONNECTION_ID_LEN || has_control_chars(id) {
@@ -388,7 +384,7 @@ pub fn record_connection_session(
         .map_err(|e| AppError::Database(e.to_string()))?;
 
     // Update metadata
-    profile.last_connected = Some(chrono_now_iso());
+    profile.last_connected = Some(unix_timestamp_secs());
     profile.session_count += 1;
     if let Some(fp) = fingerprint {
         profile.host_fingerprint = Some(fp);
@@ -444,12 +440,11 @@ pub fn update_connection_tags(
     Ok(profile.to_view())
 }
 
-/// Simple ISO 8601 timestamp without external chrono dependency.
-fn chrono_now_iso() -> String {
+/// Simple Unix timestamp in seconds as a string.
+fn unix_timestamp_secs() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let duration = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
     let secs = duration.as_secs();
-    // Format as a simple Unix timestamp string — frontend will format it.
     format!("{}", secs)
 }
 

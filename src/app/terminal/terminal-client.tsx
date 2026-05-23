@@ -35,6 +35,11 @@ interface InitParams {
   connectionId?: string;
 }
 
+interface TerminalContextMenuState {
+  x: number;
+  y: number;
+}
+
 /** Progress steps shown during the SSH connection handshake. */
 const CONNECT_STEPS = [
   { label: "Resolving host", detail: "Looking up the remote server" },
@@ -55,7 +60,9 @@ export default function TerminalPageClient() {
   const terminalsRef = useRef<Map<string, XTerm>>(new Map());
   const fitAddonsRef = useRef<Map<string, FitAddon>>(new Map());
   const pollingRef = useRef<Set<string>>(new Set());
+  const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const { handleMinimize, handleMaximize, handleClose: winClose, dragRef } = useWindowControls();
+  const [contextMenu, setContextMenu] = useState<TerminalContextMenuState | null>(null);
 
   // Subscribe to appearance store for live terminal customization
   const { fontFamily, fontSize, fontWeight, themeName, uiThemingEnabled } = useAppearanceStore();
@@ -113,6 +120,14 @@ export default function TerminalPageClient() {
       createTerminal(initParams.host, initParams.port, initParams.username, initParams.connectionId);
     }
   }, [initParams]);
+
+  useEffect(() => {
+    const preventDefaultContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+    };
+    document.addEventListener("contextmenu", preventDefaultContextMenu);
+    return () => document.removeEventListener("contextmenu", preventDefaultContextMenu);
+  }, []);
 
   const createTerminal = async (host: string, port: number, username: string, connectionId?: string): Promise<TerminalTab | null> => {
     setConnecting(true);
@@ -432,6 +447,96 @@ export default function TerminalPageClient() {
     await winClose();
   };
 
+  const closeTerminalContextMenu = useCallback(() => {
+    setContextMenu(null);
+  }, []);
+
+  const getActiveTerminal = useCallback(() => {
+    if (!activeTabId) return null;
+    const tab = tabs.find((t) => t.id === activeTabId);
+    const term = terminalsRef.current.get(activeTabId);
+    if (!tab || !term) return null;
+    return { tab, term };
+  }, [activeTabId, tabs]);
+
+  const openTerminalContextMenu = (clientX: number, clientY: number) => {
+    const menuWidth = 210;
+    const menuHeight = 190;
+    const x = Math.min(clientX, window.innerWidth - menuWidth - 12);
+    const y = Math.min(clientY, window.innerHeight - menuHeight - 12);
+    setContextMenu({ x: Math.max(8, x), y: Math.max(8, y) });
+  };
+
+  const copyTerminalSelection = async () => {
+    const active = getActiveTerminal();
+    if (!active) return;
+    const selected = active.term.getSelection();
+    if (!selected) return;
+    try {
+      await navigator.clipboard.writeText(selected);
+      closeTerminalContextMenu();
+    } catch {
+      closeTerminalContextMenu();
+    }
+  };
+
+  const pasteIntoTerminal = async () => {
+    const active = getActiveTerminal();
+    if (!active) return;
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        active.term.paste(text);
+      }
+      closeTerminalContextMenu();
+    } catch {
+      closeTerminalContextMenu();
+    }
+  };
+
+  const selectAllTerminalText = () => {
+    const active = getActiveTerminal();
+    if (!active) return;
+    active.term.selectAll();
+    closeTerminalContextMenu();
+  };
+
+  const clearTerminalScreen = () => {
+    const active = getActiveTerminal();
+    if (!active) return;
+    active.term.clear();
+    closeTerminalContextMenu();
+  };
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeTerminalContextMenu();
+      }
+    };
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (contextMenuRef.current && target && contextMenuRef.current.contains(target)) {
+        return;
+      }
+      closeTerminalContextMenu();
+    };
+    const handleScroll = () => {
+      closeTerminalContextMenu();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("scroll", handleScroll, true);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("scroll", handleScroll, true);
+    };
+  }, [contextMenu, closeTerminalContextMenu]);
+
+  const hasActiveTerminal = Boolean(getActiveTerminal());
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: ui.bg }}>
       <div
@@ -541,7 +646,13 @@ export default function TerminalPageClient() {
           </button>
         </div>
       </div>
-      <div style={{ flex: 1, position: "relative" }}>
+      <div
+        style={{ flex: 1, position: "relative" }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          openTerminalContextMenu(event.clientX, event.clientY);
+        }}
+      >
         {tabs.map((tab) => (
           <div
             key={tab.id}
@@ -633,6 +744,45 @@ export default function TerminalPageClient() {
               onMouseLeave={(e) => { e.currentTarget.style.background = ui.accent; }}
             >
               Close window
+            </button>
+          </div>
+        )}
+
+        {contextMenu && (
+          <div
+            ref={contextMenuRef}
+            className="app-context-menu"
+            style={{ top: contextMenu.y, left: contextMenu.x }}
+            onMouseDown={(event) => event.stopPropagation()}
+            onContextMenu={(event) => event.preventDefault()}
+          >
+            <button
+              className={`app-context-menu-item ${!hasActiveTerminal ? "app-context-menu-item--disabled" : ""}`}
+              disabled={!hasActiveTerminal}
+              onClick={() => void copyTerminalSelection()}
+            >
+              Copy
+            </button>
+            <button
+              className={`app-context-menu-item ${!hasActiveTerminal ? "app-context-menu-item--disabled" : ""}`}
+              disabled={!hasActiveTerminal}
+              onClick={() => void pasteIntoTerminal()}
+            >
+              Paste
+            </button>
+            <button
+              className={`app-context-menu-item ${!hasActiveTerminal ? "app-context-menu-item--disabled" : ""}`}
+              disabled={!hasActiveTerminal}
+              onClick={selectAllTerminalText}
+            >
+              Select all
+            </button>
+            <button
+              className={`app-context-menu-item ${!hasActiveTerminal ? "app-context-menu-item--disabled" : ""}`}
+              disabled={!hasActiveTerminal}
+              onClick={clearTerminalScreen}
+            >
+              Clear screen
             </button>
           </div>
         )}

@@ -1,24 +1,20 @@
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tauri::State;
-use redb::{ReadableTable, TableDefinition};
+use redb::ReadableTable;
 use crate::state::AppState;
 use crate::error::{AppResult, AppError};
 use crate::crypto::{encrypt_key_data, decrypt_key_data};
+use crate::commands::utils::{has_control_chars, KEYS_TABLE, StoredKey};
 use ssh_key::{LineEnding, PrivateKey as SshPrivateKey};
-use russh_keys::{PrivateKey, PublicKey};
+use russh_keys::PrivateKey;
 use zeroize::Zeroize;
 use rand::thread_rng;
 use russh_keys::Algorithm as RusshAlgorithm;
 use base64::Engine;
 
-const KEYS_TABLE: TableDefinition<&str, &str> = TableDefinition::new("keys");
 const MAX_KEY_ID_LEN: usize = 128;
 const MAX_KEY_NAME_LEN: usize = 128;
 const MAX_PRIVATE_KEY_BYTES: usize = 64 * 1024;
-
-fn has_control_chars(value: &str) -> bool {
-    value.chars().any(|c| c.is_control())
-}
 
 fn validate_key_id(id: &str) -> AppResult<()> {
     if id.trim().is_empty() || id.len() > MAX_KEY_ID_LEN || has_control_chars(id) {
@@ -51,16 +47,6 @@ fn validate_key_data_input(key_data: &str) -> AppResult<()> {
     Ok(())
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct StoredKey {
-    pub id: String,
-    pub name: String,
-    pub key_type: String,
-    pub fingerprint: String,
-    pub encrypted_key_data: String,
-}
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KeyInfo {
@@ -79,11 +65,6 @@ pub struct KeyData {
     pub fingerprint: String,
     pub public_key: String,
     pub private_key: String,
-}
-
-#[allow(dead_code)]
-fn calculate_fingerprint(public_key: &PublicKey) -> String {
-    public_key.fingerprint(Default::default()).to_string()
 }
 
 fn save_key_to_db(state: &State<'_, AppState>, id: &str, stored_key: &StoredKey) -> AppResult<()> {

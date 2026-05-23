@@ -35,11 +35,6 @@ export const sshApi = {
     return invoke("ssh_disconnect", { sessionId });
   },
 
-  /** Check whether a session still exists in the backend map. */
-  isConnected(sessionId: string): Promise<boolean> {
-    return invoke("ssh_is_connected", { sessionId });
-  },
-
   /** Resize the terminal of an active session. */
   resize(sessionId: string, cols: number, rows: number): Promise<void> {
     return invoke("ssh_resize", { sessionId, cols, rows });
@@ -60,19 +55,7 @@ export const sshApi = {
     return invoke("ssh_detect_os", { connectionId });
   },
 
-  /** List all known host keys (TOFU entries). */
-  listKnownHosts(): Promise<KnownHostEntry[]> {
-    return invoke("list_known_hosts");
-  },
 };
-
-/** A known SSH host key entry from the backend's known_hosts file. */
-export interface KnownHostEntry {
-  host: string;
-  port: number;
-  keyType: string;
-  fingerprint: string;
-}
 
 // ---------------------------------------------------------------------------
 // Connection Profile Commands
@@ -96,11 +79,6 @@ export const connectionApi = {
       port,
     });
     return { status: result.status, responseTimeMs: result.response_time_ms };
-  },
-
-  /** Save (create or update) a connection profile. */
-  save(profile: ConnectionProfile): Promise<void> {
-    return invoke("save_connection", { profile: { ...profile } });
   },
 
   /** Load all saved connection profiles. */
@@ -131,10 +109,6 @@ export const connectionApi = {
     });
   },
 
-  /** Update tags for a connection. */
-  updateTags(id: string, tags: string[]): Promise<ConnectionProfile> {
-    return invoke("update_connection_tags", { id, tags });
-  },
 };
 
 // ---------------------------------------------------------------------------
@@ -162,6 +136,215 @@ export const networkApi = {
       txBytesTotal: raw.tx_bytes_total,
       interfaceCount: raw.interface_count,
     };
+  },
+};
+
+// ---------------------------------------------------------------------------
+// SFTP Commands
+// ---------------------------------------------------------------------------
+
+export interface SftpFileEntry {
+  name: string;
+  path: string;
+  isDir: boolean;
+  size: number | null;
+  modifiedAt: number | null;
+}
+
+interface LocalDirListingRaw {
+  path: string;
+  parentPath: string | null;
+  entries: SftpFileEntry[];
+}
+
+interface RemoteDirListingRaw {
+  path: string;
+  entries: SftpFileEntry[];
+}
+
+export interface LocalDirListing {
+  path: string;
+  parentPath: string | null;
+  entries: SftpFileEntry[];
+}
+
+export interface RemoteDirListing {
+  path: string;
+  entries: SftpFileEntry[];
+}
+
+export interface UploadResult {
+  remotePath: string;
+  bytesUploaded: number;
+}
+
+export interface DownloadResult {
+  localPath: string;
+  bytesDownloaded: number;
+}
+
+export interface TransferDirResult {
+  itemsTransferred: number;
+  totalBytes: number;
+}
+
+export interface TransferProgress {
+  fileName: string;
+  bytesSent: number;
+  totalBytes: number;
+  speed: number | null;
+  diskSpeed?: number | null;
+}
+
+export interface DeleteProgress {
+  fileName: string;
+  itemsDeleted: number;
+  totalItems: number;
+  bytesProcessed: number;
+  totalBytes: number;
+  currentFileBytesProcessed: number;
+  currentFileTotalBytes: number;
+  speed: number | null;
+  diskSpeed?: number | null;
+  phase: "scanning" | "deleting";
+}
+
+export interface DriveInfo {
+  name: string;
+  mountPoint: string;
+  totalSpace: number;
+  availableSpace: number;
+  fileSystem: string;
+  isRemovable: boolean;
+}
+
+export interface RemoteFileStat {
+  name: string;
+  path: string;
+  size: number | null;
+  isDir: boolean;
+  modifiedAt: number | null;
+  accessedAt: number | null;
+  permissions: number | null;
+  uid: number | null;
+  user: string | null;
+  gid: number | null;
+  group: string | null;
+}
+
+export const sftpApi = {
+  connect(
+    sessionId: string,
+    connectionId: string,
+    trustOnFirstUse = true,
+  ): Promise<string> {
+    return invoke("sftp_connect", { sessionId, connectionId, trustOnFirstUse });
+  },
+
+  disconnect(sessionId: string): Promise<void> {
+    return invoke("sftp_disconnect", { sessionId });
+  },
+
+  async listLocalDrives(): Promise<DriveInfo[]> {
+    return invoke<DriveInfo[]>("sftp_list_local_drives");
+  },
+
+  async listLocalDir(path?: string): Promise<LocalDirListing> {
+    return invoke<LocalDirListing>("sftp_list_local_dir", {
+      path: path ?? null,
+    });
+  },
+
+  async listRemoteDir(
+    sessionId: string,
+    path?: string,
+  ): Promise<RemoteDirListing> {
+    return invoke<RemoteDirListing>("sftp_list_remote_dir", {
+      sessionId,
+      path: path ?? null,
+    });
+  },
+
+  async getRemoteHome(sessionId: string): Promise<string> {
+    return invoke<string>("sftp_get_remote_home", { sessionId });
+  },
+
+  async uploadFile(
+    sessionId: string,
+    localPath: string,
+    remoteDir: string,
+    overwrite = false,
+  ): Promise<UploadResult> {
+    return invoke<UploadResult>("sftp_upload_file", {
+      sessionId,
+      localPath,
+      remoteDir,
+      overwrite,
+    });
+  },
+
+  cancelUpload(sessionId: string): Promise<void> {
+    return invoke("sftp_cancel_upload", { sessionId });
+  },
+
+  cancelDownload(sessionId: string): Promise<void> {
+    return invoke("sftp_cancel_download", { sessionId });
+  },
+
+  mkdirRemote(sessionId: string, path: string): Promise<void> {
+    return invoke("sftp_mkdir_remote", { sessionId, path });
+  },
+
+  async downloadFile(
+    sessionId: string,
+    remotePath: string,
+    localDir: string,
+  ): Promise<{ localPath: string; bytesDownloaded: number }> {
+    return invoke("sftp_download_file", { sessionId, remotePath, localDir });
+  },
+
+  async uploadDir(
+    sessionId: string,
+    localPath: string,
+    remoteDir: string,
+  ): Promise<{ itemsTransferred: number; totalBytes: number }> {
+    return invoke("sftp_upload_dir", { sessionId, localPath, remoteDir });
+  },
+
+  async downloadDir(
+    sessionId: string,
+    remotePath: string,
+    localDir: string,
+  ): Promise<{ itemsTransferred: number; totalBytes: number }> {
+    return invoke("sftp_download_dir", { sessionId, remotePath, localDir });
+  },
+
+  deleteRemotePath(sessionId: string, path: string, isDir: boolean): Promise<void> {
+    return invoke("sftp_delete_remote_path", { sessionId, path, isDir });
+  },
+
+  cancelDelete(targetPath: string): Promise<void> {
+    return invoke("sftp_cancel_delete", { targetPath });
+  },
+
+  deleteLocalPath(path: string, isDir: boolean): Promise<void> {
+    return invoke("sftp_delete_local_path", { path, isDir });
+  },
+
+  renameRemote(sessionId: string, oldPath: string, newPath: string): Promise<void> {
+    return invoke("sftp_rename_remote", { sessionId, oldPath, newPath });
+  },
+
+  renameLocal(oldPath: string, newPath: string): Promise<void> {
+    return invoke("sftp_rename_local", { oldPath, newPath });
+  },
+
+  async statRemote(sessionId: string, path: string): Promise<RemoteFileStat> {
+    return invoke<RemoteFileStat>("sftp_stat_remote", { sessionId, path });
+  },
+
+  mkdirLocal(path: string): Promise<void> {
+    return invoke("sftp_mkdir_local", { path });
   },
 };
 

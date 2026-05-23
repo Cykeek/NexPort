@@ -202,25 +202,25 @@ export function SettingsPage() {
                           <span className="settings-row-label">Update Channel</span>
                         </div>
                       </div>
-                      <div className="settings-dropdown-wrapper">
-                        <button className="settings-channel-btn" onClick={() => setDropdownOpen(!dropdownOpen)}>
+                      <div className="dropdown-wrapper">
+                        <button className="dropdown-trigger" onClick={() => setDropdownOpen(!dropdownOpen)}>
                           <span className={"settings-channel-dot " + (channel === "stable" ? "settings-channel-dot--stable" : "settings-channel-dot--dev")} />
                           {channel === "stable" ? "Stable" : "Dev"}
                           <ChevronDown size={11} />
                         </button>
                         {dropdownOpen && (
                           <>
-                            <div className="settings-dropdown-backdrop" onClick={() => setDropdownOpen(false)} />
-                            <div className="settings-dropdown-menu">
-                              <button className={`settings-dropdown-item ${channel === "stable" ? "active" : ""}`} onClick={() => handleChannelChange("stable")}>
+                            <div className="dropdown-backdrop" onClick={() => setDropdownOpen(false)} />
+                            <div className="dropdown-menu dropdown-menu--compact dropdown-menu--right">
+                              <button className={`dropdown-item ${channel === "stable" ? "active" : ""}`} onClick={() => handleChannelChange("stable")}>
                                 <span className="settings-channel-dot settings-channel-dot--stable" />
                                 Stable
-                                <span className="settings-dropdown-hint">main</span>
+                                <span className="dropdown-hint">main</span>
                               </button>
-                              <button className={`settings-dropdown-item ${channel === "dev" ? "active" : ""}`} onClick={() => handleChannelChange("dev")}>
+                              <button className={`dropdown-item ${channel === "dev" ? "active" : ""}`} onClick={() => handleChannelChange("dev")}>
                                 <span className="settings-channel-dot settings-channel-dot--dev" />
                                 Dev
-                                <span className="settings-dropdown-hint">dev</span>
+                                <span className="dropdown-hint">dev</span>
                               </button>
                             </div>
                           </>

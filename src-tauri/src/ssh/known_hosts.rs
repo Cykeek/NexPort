@@ -78,6 +78,7 @@ pub fn check_known_hosts_path(
 
 /// Represents a single known host entry for frontend display.
 #[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct KnownHostEntry {
     pub host: String,
     pub port: u16,

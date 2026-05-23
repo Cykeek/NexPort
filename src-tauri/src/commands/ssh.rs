@@ -6,8 +6,10 @@ use crate::state::AppState;
 use crate::ssh::session::SshSession;
 use crate::ssh::session::get_known_hosts_path;
 use crate::error::{AppResult, AppError};
-use crate::commands::connections::ConnectionProfile;
-use crate::crypto::{decrypt_field, decrypt_key_data};
+use crate::commands::utils::{
+    validate_identifier, load_connection_credentials,
+    has_control_chars,
+};
 use crate::ssh::known_hosts::list_known_hosts_path;
 
 const MAX_SESSION_ID_LEN: usize = 128;
@@ -20,137 +22,27 @@ const MAX_SSH_READ_TIMEOUT_MS: u64 = 5000;
 const MAX_TERMINAL_COLS: u32 = 2000;
 const MAX_TERMINAL_ROWS: u32 = 1000;
 
-fn has_control_chars(input: &str) -> bool {
-    input.chars().any(|c| c.is_control())
-}
-
-fn validate_identifier(value: &str, field: &str, max_len: usize) -> AppResult<()> {
-    if value.trim().is_empty() || value.len() > max_len || has_control_chars(value) {
-        return Err(AppError::InvalidInput(format!("Invalid {}", field)));
-    }
-    Ok(())
-}
-
 /// Validate connection parameters to prevent malformed or malicious input.
 fn validate_connection_params(host: &str, port: u16, username: &str) -> AppResult<()> {
-    // Reject empty or whitespace-only hostnames
     if host.trim().is_empty() {
         return Err(AppError::SshConnection("Hostname cannot be empty".to_string()));
     }
-    // Reject path traversal and null bytes
     if host.contains('/') || host.contains('\\') || host.contains('\0') {
         return Err(AppError::SshConnection("Invalid hostname".to_string()));
     }
-    // Reject extremely long hostnames (255 chars is the DNS limit)
     if host.len() > 255 {
         return Err(AppError::SshConnection("Hostname too long".to_string()));
     }
-    // Reject empty usernames
     if username.trim().is_empty() {
         return Err(AppError::SshConnection("Username cannot be empty".to_string()));
     }
-    // Reject control characters and overly long usernames.
     if has_control_chars(username) || username.len() > MAX_USERNAME_LEN {
         return Err(AppError::SshConnection("Invalid username".to_string()));
     }
-    // Reject reserved ports
     if port == 0 {
         return Err(AppError::SshConnection("Invalid port".to_string()));
     }
     Ok(())
-}
-
-const CONNECTIONS_TABLE: redb::TableDefinition<&str, &str> = redb::TableDefinition::new("connections");
-const KEYS_TABLE: redb::TableDefinition<&str, &str> = redb::TableDefinition::new("keys");
-
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct StoredKey {
-    #[allow(dead_code)]
-    pub id: String,
-    #[allow(dead_code)]
-    pub name: String,
-    #[allow(dead_code)]
-    pub key_type: String,
-    #[allow(dead_code)]
-    pub fingerprint: String,
-    pub encrypted_key_data: String,
-}
-
-/// Decrypted credentials for an SSH connection.
-struct ConnectionCredentials {
-    host: String,
-    port: u16,
-    username: String,
-    password: Option<String>,
-    key_data: Option<String>,
-}
-
-/// Load a connection profile by ID and decrypt its credentials from the database.
-/// Used by both `ssh_connect` (with saved profiles) and `ssh_detect_os`.
-fn load_connection_credentials(
-    state: &State<'_, AppState>,
-    connection_id: &str,
-) -> AppResult<ConnectionCredentials> {
-    validate_identifier(connection_id, "connection ID", MAX_CONNECTION_ID_LEN)?;
-
-    let db_guard = state.get_db()
-        .map_err(|e| AppError::Database(e.to_string()))?;
-    let db = db_guard.as_ref()
-        .ok_or_else(|| AppError::Database("Database not initialized".to_string()))?;
-
-    let read_txn = db.begin_read()
-        .map_err(|e| AppError::Database(e.to_string()))?;
-    let connections_table = read_txn.open_table(CONNECTIONS_TABLE)
-        .map_err(|e| AppError::Database(e.to_string()))?;
-
-    let value = connections_table.get(connection_id)
-        .map_err(|e| AppError::Database(e.to_string()))?
-        .ok_or_else(|| AppError::Database("Connection not found".to_string()))?;
-
-    let profile: ConnectionProfile = serde_json::from_str(value.value())
-        .map_err(|e| AppError::Database(e.to_string()))?;
-
-    let password = if let Some(ref encrypted) = profile.encrypted_password {
-        if !encrypted.is_empty() {
-            Some(decrypt_field(&state.vault, encrypted)
-                .map_err(|e| AppError::Vault(format!("Failed to decrypt password: {}", e)))?)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    let key_data = if let Some(ref key_id) = profile.key_id {
-        let keys_table = read_txn.open_table(KEYS_TABLE)
-            .map_err(|e| AppError::Database(e.to_string()))?;
-
-        let key_value = keys_table.get(key_id.as_str())
-            .map_err(|e| AppError::Database(e.to_string()))?
-            .ok_or_else(|| AppError::Database("Key not found".to_string()))?;
-
-        let stored_key: StoredKey = serde_json::from_str(key_value.value())
-            .map_err(|e| AppError::Database(e.to_string()))?;
-
-        let mut decrypted = decrypt_key_data(&state.vault, &stored_key.encrypted_key_data)
-            .map_err(|e| AppError::Vault(format!("Failed to decrypt SSH key: {}", e)))?;
-
-        if !decrypted.ends_with('\n') {
-            decrypted.push('\n');
-        }
-        Some(decrypted)
-    } else {
-        None
-    };
-
-    Ok(ConnectionCredentials {
-        host: profile.host,
-        port: profile.port,
-        username: profile.username,
-        password,
-        key_data,
-    })
 }
 
 #[tauri::command]
@@ -173,7 +65,7 @@ pub async fn ssh_connect(
     let (mut final_password, mut final_key_data, final_host, final_port, final_username) =
         if let Some(ref conn_id) = connection_id {
             validate_identifier(conn_id, "connection ID", MAX_CONNECTION_ID_LEN)?;
-            let creds = load_connection_credentials(&state, conn_id)?;
+            let creds = load_connection_credentials(&state, conn_id, MAX_CONNECTION_ID_LEN)?;
             (creds.password, creds.key_data, creds.host, creds.port, creds.username)
         } else {
             (password, key_data, host.clone(), port, username.clone())
@@ -312,7 +204,7 @@ pub async fn ssh_detect_os(
     validate_identifier(&connection_id, "connection ID", MAX_CONNECTION_ID_LEN)?;
 
     // Fetch connection details and credentials from database
-    let mut creds = load_connection_credentials(&state, &connection_id)?;
+    let mut creds = load_connection_credentials(&state, &connection_id, MAX_CONNECTION_ID_LEN)?;
 
     // Create a separate SSH session for detection (always use TOFU for background detection)
     let session = SshSession::connect(

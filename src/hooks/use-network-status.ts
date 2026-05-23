@@ -9,6 +9,8 @@ interface NetworkStatus {
   download: string;
   upload: string;
   meterAvailable: boolean;
+  rxBps: number;
+  txBps: number;
 }
 
 interface CounterSnapshot {
@@ -24,13 +26,14 @@ const SPEED_SMOOTHING_ALPHA_RISE = 0.55;
 const SPEED_SMOOTHING_ALPHA_FALL = 0.25;
 
 export function useNetworkStatus(showPublicIp = false) {
-  const [mounted, setMounted] = useState(false);
   const [status, setStatus] = useState<NetworkStatus>({
     online: true,
     ip: null,
     download: "—",
     upload: "—",
     meterAvailable: true,
+    rxBps: 0,
+    txBps: 0,
   });
 
   const fetchIp = useCallback(async () => {
@@ -67,8 +70,6 @@ export function useNetworkStatus(showPublicIp = false) {
   }, [showPublicIp]);
 
   useEffect(() => {
-    setMounted(true);
-
     const initialOnline = navigator.onLine;
     setStatus((prev) => ({ ...prev, online: initialOnline }));
 
@@ -84,6 +85,7 @@ export function useNetworkStatus(showPublicIp = false) {
       lastSnapshot = null;
       smoothedRxBps = 0;
       smoothedTxBps = 0;
+      setStatus((prev) => ({ ...prev, rxBps: 0, txBps: 0 }));
     };
 
     const updateFromCounters = async () => {
@@ -112,6 +114,8 @@ export function useNetworkStatus(showPublicIp = false) {
                   download: "0 B/s",
                   upload: "0 B/s",
                   meterAvailable: true,
+                  rxBps: 0,
+                  txBps: 0,
                 }
               : prev,
           );
@@ -149,6 +153,8 @@ export function useNetworkStatus(showPublicIp = false) {
                 download,
                 upload,
                 meterAvailable: true,
+                rxBps: smoothedRxBps,
+                txBps: smoothedTxBps,
               }
             : prev,
         );
@@ -166,6 +172,8 @@ export function useNetworkStatus(showPublicIp = false) {
                 download: "N/A",
                 upload: "N/A",
                 meterAvailable: false,
+                rxBps: 0,
+                txBps: 0,
               }
             : prev,
         );
@@ -195,6 +203,8 @@ export function useNetworkStatus(showPublicIp = false) {
         ip: null,
         download: "—",
         upload: "—",
+        rxBps: 0,
+        txBps: 0,
       }));
     };
 
@@ -230,7 +240,7 @@ export function useNetworkStatus(showPublicIp = false) {
     };
   }, [fetchIp, showPublicIp]);
 
-  return { ...status, mounted };
+  return status;
 }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {

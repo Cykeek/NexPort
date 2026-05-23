@@ -1,17 +1,18 @@
 "use client";
 
-import { LayoutGrid, Key, Settings, Zap, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { LayoutGrid, Key, Settings, FolderOpen, Zap, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
 interface SidebarProps {
   open: boolean;
-  activeNav: "connections" | "keys" | "settings";
-  onNavChange: (nav: "connections" | "keys" | "settings") => void;
+  activeNav: "connections" | "keys" | "sftp" | "settings";
+  onNavChange: (nav: "connections" | "keys" | "sftp" | "settings") => void;
   onToggle: () => void;
 }
 
 const navItems = [
   { id: "connections" as const, label: "Connections", icon: LayoutGrid },
   { id: "keys" as const, label: "SSH Keys", icon: Key },
+  { id: "sftp" as const, label: "SFTP", icon: FolderOpen },
   { id: "settings" as const, label: "Settings", icon: Settings },
 ];
 

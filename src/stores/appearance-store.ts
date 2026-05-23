@@ -18,7 +18,7 @@ import {
 
 /* ─── Interfaces ───────────────────────────────────────────────────────── */
 
-export interface AppearancePreferences {
+interface AppearancePreferences {
   fontFamily: string;
   fontSize: number;
   fontWeight: number;
@@ -28,7 +28,7 @@ export interface AppearancePreferences {
   showPublicIp: boolean;
 }
 
-export interface ImportResult {
+interface ImportResult {
   /** The validated preferences that were applied */
   applied: AppearancePreferences;
   /** Field names that were reset to defaults due to invalid values */
@@ -50,7 +50,7 @@ export interface AppearanceState extends AppearancePreferences {
 
 /* ─── Validation Functions ─────────────────────────────────────────────── */
 
-export function validateFontFamily(value: unknown): string {
+function validateFontFamily(value: unknown): string {
   // Accept any non-empty string as a valid font family (supports system fonts)
   if (typeof value === "string" && value.trim().length > 0) {
     return value;
@@ -58,7 +58,7 @@ export function validateFontFamily(value: unknown): string {
   return DEFAULT_PREFERENCES.fontFamily;
 }
 
-export function validateFontSize(value: unknown): number {
+function validateFontSize(value: unknown): number {
   const num = Number(value);
   if (!Number.isInteger(num) || num < FONT_SIZE_MIN || num > FONT_SIZE_MAX) {
     return DEFAULT_PREFERENCES.fontSize;
@@ -66,7 +66,7 @@ export function validateFontSize(value: unknown): number {
   return num;
 }
 
-export function validateFontWeight(value: unknown): number {
+function validateFontWeight(value: unknown): number {
   const num = Number(value);
   const validWeights = AVAILABLE_FONT_WEIGHTS.map(
     (w) => w.value,
@@ -77,7 +77,7 @@ export function validateFontWeight(value: unknown): number {
   return num;
 }
 
-export function validateThemeName(value: unknown): string {
+function validateThemeName(value: unknown): string {
   if (
     typeof value === "string" &&
     (AVAILABLE_THEMES as readonly string[]).includes(value)
@@ -87,7 +87,7 @@ export function validateThemeName(value: unknown): string {
   return DEFAULT_PREFERENCES.themeName;
 }
 
-export function validateColorMode(value: unknown): ColorMode {
+function validateColorMode(value: unknown): ColorMode {
   if (
     typeof value === "string" &&
     (AVAILABLE_COLOR_MODES as readonly string[]).includes(value)
@@ -97,7 +97,7 @@ export function validateColorMode(value: unknown): ColorMode {
   return DEFAULT_PREFERENCES.colorMode;
 }
 
-export function validatePreferences(raw: unknown): AppearancePreferences {
+function validatePreferences(raw: unknown): AppearancePreferences {
   if (typeof raw !== "object" || raw === null) {
     return { ...DEFAULT_PREFERENCES };
   }
@@ -126,7 +126,7 @@ export function validatePreferences(raw: unknown): AppearancePreferences {
  * Unlike validateFontSize (which returns the default on invalid input),
  * clampFontSize always produces a valid clamped integer.
  */
-export function clampFontSize(value: number): number {
+function clampFontSize(value: number): number {
   const clamped = Math.max(FONT_SIZE_MIN, Math.min(FONT_SIZE_MAX, value));
   return Math.round(clamped);
 }

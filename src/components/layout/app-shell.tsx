@@ -8,6 +8,7 @@ import { Toaster } from "sonner";
 import { Minus, Square, X, Zap } from "lucide-react";
 import { ConnectionsPage } from "@/components/connections/connections-page";
 import { KeyManager } from "@/components/keys/key-manager";
+import { SftpPage } from "@/components/sftp/sftp-page";
 import { SettingsPage } from "@/components/settings/settings-page";
 import { useWindowControls } from "@/hooks/use-window-controls";
 import { useColorMode } from "@/hooks/use-color-mode";
@@ -16,7 +17,7 @@ import { WanderingEyes } from "@/components/ui/wandering-eyes";
 
 export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [activePage, setActivePage] = useState<"connections" | "keys" | "settings">("connections");
+  const [activePage, setActivePage] = useState<"connections" | "keys" | "sftp" | "settings">("connections");
   const [appReady, setAppReady] = useState(false);
   const { handleMinimize, handleMaximize, handleClose, dragRef } = useWindowControls();
   useColorMode();
@@ -25,6 +26,14 @@ export function AppShell() {
   useEffect(() => {
     const timer = setTimeout(() => setAppReady(true), 1600);
     return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const handleContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+    };
+    document.addEventListener("contextmenu", handleContextMenu);
+    return () => document.removeEventListener("contextmenu", handleContextMenu);
   }, []);
 
   if (!appReady) {
@@ -78,6 +87,9 @@ export function AppShell() {
           <ErrorBoundary>
             {activePage === "connections" && <ConnectionsPage />}
             {activePage === "keys" && <KeyManager />}
+            <div style={{ display: activePage === "sftp" ? "contents" : "none" }}>
+              <SftpPage />
+            </div>
             {activePage === "settings" && <SettingsPage />}
           </ErrorBoundary>
         </ContentArea>

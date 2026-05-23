@@ -41,8 +41,6 @@ export interface ConnectionState {
   statuses: Record<string, HostStatus>;
   isLoading: boolean;
   search: string;
-  /** Filtered connections based on search term. */
-  filtered: ConnectionProfile[];
 
   loadConnections: () => Promise<void>;
   deleteConnection: (id: string) => Promise<void>;
@@ -63,7 +61,6 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
   statuses: {},
   isLoading: false,
   search: "",
-  filtered: [],
 
   loadConnections: async () => {
     set({ isLoading: true });
