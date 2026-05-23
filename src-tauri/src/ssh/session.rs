@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::fs;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 use russh::*;
 use russh::keys::*;
 use zeroize::Zeroize;
@@ -138,7 +139,13 @@ impl SshSession {
         trust_on_first_use: bool,
     ) -> Result<Self, String> {
         let known_hosts_path = get_known_hosts_path();
-        let config = Arc::new(client::Config::default());
+        let config = Arc::new(client::Config {
+            keepalive_interval: Some(Duration::from_secs(30)),
+            keepalive_max: 3,
+            inactivity_timeout: Some(Duration::from_secs(120)),
+            nodelay: true,
+            ..client::Config::default()
+        });
         let addr = (host, port);
 
         let handler = ClientHandler {

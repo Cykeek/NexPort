@@ -511,7 +511,13 @@ pub async fn sftp_connect(
         trust_on_first_use: Arc::new(AtomicBool::new(trust_on_first_use.unwrap_or(true))),
     };
 
-    let config = Arc::new(client::Config::default());
+    let config = Arc::new(client::Config {
+        keepalive_interval: Some(Duration::from_secs(30)),
+        keepalive_max: 3,
+        inactivity_timeout: Some(Duration::from_secs(120)),
+        nodelay: true,
+        ..client::Config::default()
+    });
     let mut ssh = client::connect(config, (creds.host.as_str(), creds.port), handler)
         .await
         .map_err(|e| AppError::SshConnection(e.to_string()))?;
