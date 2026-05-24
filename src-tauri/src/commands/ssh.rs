@@ -105,6 +105,10 @@ pub async fn ssh_connect(
     }
 
     let wrapped = Arc::new(tokio::sync::Mutex::new(session));
+    // Disconnect any existing session with the same ID before overwriting
+    if let Some(existing) = state.sessions.get(&session_id) {
+        existing.lock().await.disconnect().await.ok();
+    }
     state.sessions.insert(session_id.clone(), wrapped);
     Ok(session_id)
 }
@@ -129,10 +133,12 @@ pub async fn ssh_is_connected(
     state: State<'_, AppState>,
 ) -> AppResult<bool> {
     validate_identifier(&session_id, "session ID", MAX_SESSION_ID_LEN)?;
-
-    // Simple check: just verify session exists in our map
-    // The actual connection health is checked via ssh_read errors
-    Ok(state.sessions.contains_key(&session_id))
+    let session = match state.sessions.get(&session_id) {
+        Some(s) => s.clone(),
+        None => return Ok(false),
+    };
+    let session = session.lock().await;
+    Ok(session.is_connected())
 }
 
 #[tauri::command]

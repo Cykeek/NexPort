@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useKeyStore } from "@/stores/key-store";
 import { X } from "lucide-react";
+import { Dropdown, type DropdownItem } from "@/components/ui/dropdown";
 import { toast } from "sonner";
 import { SSH_DEFAULTS } from "@/config/constants";
 import { ConnectionProfile } from "@/types/connection";
@@ -127,19 +128,19 @@ export function ConnectionDialog({ open, onOpenChange, editConnection, onSuccess
                       No keys saved. Go to Keys section to add a key.
                     </div>
                   ) : (
-                    <select 
-                      className="form-input" 
-                      value={form.keyId} 
-                      onChange={(e) => setForm((p) => ({ ...p, keyId: e.target.value }))}
-                      required
-                    >
-                      <option value="">Select a key...</option>
-                      {keys.map((key) => (
-                        <option key={key.id} value={key.id}>
-                          {key.name} ({key.keyType})
-                        </option>
-                      ))}
-                    </select>
+                    <Dropdown
+                      value={form.keyId || null}
+                      items={[
+                        { value: "", label: "Select a key..." },
+                        ...keys.map((key) => ({
+                          value: key.id,
+                          label: key.name,
+                          hint: key.keyType,
+                        })),
+                      ]}
+                      onChange={(v) => setForm((p) => ({ ...p, keyId: typeof v === "string" ? v : "" }))}
+                      fullWidth
+                    />
                   )}
                 </div>
               )}

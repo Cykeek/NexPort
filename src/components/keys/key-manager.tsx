@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { KeyActionDialog } from "./key-action-dialog";
 import { useKeyStore, KeyInfo } from "@/stores/key-store";
 import BorderGlow from "@/components/ui/BorderGlow";
+import { Dropdown } from "@/components/ui/dropdown";
 
 interface GenerateKeyDialogProps {
   onClose: () => void;
@@ -61,14 +62,15 @@ function GenerateKeyDialog({ onClose, onGenerate }: GenerateKeyDialogProps) {
               </div>
               <div className="form-group">
                 <label className="form-label">Key Type</label>
-                <select 
-                  className="form-input"
+                <Dropdown
                   value={keyType}
-                  onChange={(e) => setKeyType(e.target.value)}
-                >
-                  <option value="ed25519">ED25519 (Recommended)</option>
-                  <option value="rsa">RSA</option>
-                </select>
+                  items={[
+                    { value: "ed25519", label: "ED25519", hint: "Recommended" },
+                    { value: "rsa", label: "RSA" },
+                  ]}
+                  onChange={(v) => v && setKeyType(String(v))}
+                  fullWidth
+                />
               </div>
             </div>
             <div className="modal-footer">
@@ -85,7 +87,7 @@ function GenerateKeyDialog({ onClose, onGenerate }: GenerateKeyDialogProps) {
 }
 
 export function KeyManager() {
-  const { keys, deleteKey, loadKeys, saveKey } = useKeyStore();
+  const { keys, deleteKey, loadKeys, saveKey, isLoading } = useKeyStore();
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -168,7 +170,23 @@ export function KeyManager() {
         </div>
       </div>
 
-      {keys.length === 0 ? (
+      {isLoading ? (
+        <div className="keys-grid">
+          {Array.from({ length: 6 }, (_, i) => (
+            <div key={i} className="keycard-skeleton">
+              <div className="keycard-skeleton-header">
+                <div className="skeleton-box" style={{ width: 40, height: 40, borderRadius: 10 }} />
+                <div style={{ flex: 1 }}>
+                  <div className="skeleton-box" style={{ width: "60%", height: 14, borderRadius: 6, marginBottom: 8 }} />
+                  <div className="skeleton-box" style={{ width: "35%", height: 12, borderRadius: 6 }} />
+                </div>
+              </div>
+              <div className="skeleton-box" style={{ width: "100%", height: 12, borderRadius: 6, marginTop: 12 }} />
+              <div className="skeleton-box" style={{ width: "80%", height: 12, borderRadius: 6, marginTop: 8 }} />
+            </div>
+          ))}
+        </div>
+      ) : keys.length === 0 ? (
         <div className="keys-empty">
           <Key className="keys-empty-icon" size={48} />
           <div className="keys-empty-title">No SSH keys</div>

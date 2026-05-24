@@ -130,6 +130,11 @@ pub(crate) fn get_known_hosts_path() -> PathBuf {
 }
 
 impl SshSession {
+    /// Returns true if the channel and handle are still present (not explicitly disconnected).
+    pub fn is_connected(&self) -> bool {
+        self.handle.is_some() && self.channel.is_some()
+    }
+
     pub async fn connect(
         host: &str,
         port: u16,

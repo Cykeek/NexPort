@@ -6,6 +6,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import "@xterm/xterm/css/xterm.css";
 import { X, Plus, Minus, Square } from "lucide-react";
+import { toast } from "sonner";
 import { useWindowControls } from "@/hooks/use-window-controls";
 import { useColorMode } from "@/hooks/use-color-mode";
 import { WanderingEyes } from "@/components/ui/wandering-eyes";
@@ -190,6 +191,9 @@ export default function TerminalPageClient() {
   };
 
   const handleConnectionLost = (tab: TerminalTab, term: XTerm) => {
+    toast.error(`Connection lost`, {
+      description: `Session to ${tab.host} was disconnected`,
+    });
     pollingRef.current.delete(tab.sessionId);
     term.dispose();
     terminalsRef.current.delete(tab.id);
@@ -751,34 +755,34 @@ export default function TerminalPageClient() {
         {contextMenu && (
           <div
             ref={contextMenuRef}
-            className="app-context-menu"
+            className="context-menu"
             style={{ top: contextMenu.y, left: contextMenu.x }}
             onMouseDown={(event) => event.stopPropagation()}
             onContextMenu={(event) => event.preventDefault()}
           >
             <button
-              className={`app-context-menu-item ${!hasActiveTerminal ? "app-context-menu-item--disabled" : ""}`}
+              className={`context-menu-item ${!hasActiveTerminal ? "context-menu-item--disabled" : ""}`}
               disabled={!hasActiveTerminal}
               onClick={() => void copyTerminalSelection()}
             >
               Copy
             </button>
             <button
-              className={`app-context-menu-item ${!hasActiveTerminal ? "app-context-menu-item--disabled" : ""}`}
+              className={`context-menu-item ${!hasActiveTerminal ? "context-menu-item--disabled" : ""}`}
               disabled={!hasActiveTerminal}
               onClick={() => void pasteIntoTerminal()}
             >
               Paste
             </button>
             <button
-              className={`app-context-menu-item ${!hasActiveTerminal ? "app-context-menu-item--disabled" : ""}`}
+              className={`context-menu-item ${!hasActiveTerminal ? "context-menu-item--disabled" : ""}`}
               disabled={!hasActiveTerminal}
               onClick={selectAllTerminalText}
             >
               Select all
             </button>
             <button
-              className={`app-context-menu-item ${!hasActiveTerminal ? "app-context-menu-item--disabled" : ""}`}
+              className={`context-menu-item ${!hasActiveTerminal ? "context-menu-item--disabled" : ""}`}
               disabled={!hasActiveTerminal}
               onClick={clearTerminalScreen}
             >

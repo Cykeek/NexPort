@@ -299,24 +299,27 @@ export const sftpApi = {
     sessionId: string,
     remotePath: string,
     localDir: string,
+    overwrite = false,
   ): Promise<{ localPath: string; bytesDownloaded: number }> {
-    return invoke("sftp_download_file", { sessionId, remotePath, localDir });
+    return invoke("sftp_download_file", { sessionId, remotePath, localDir, overwrite });
   },
 
   async uploadDir(
     sessionId: string,
     localPath: string,
     remoteDir: string,
+    overwrite = false,
   ): Promise<{ itemsTransferred: number; totalBytes: number }> {
-    return invoke("sftp_upload_dir", { sessionId, localPath, remoteDir });
+    return invoke("sftp_upload_dir", { sessionId, localPath, remoteDir, overwrite });
   },
 
   async downloadDir(
     sessionId: string,
     remotePath: string,
     localDir: string,
+    overwrite = false,
   ): Promise<{ itemsTransferred: number; totalBytes: number }> {
-    return invoke("sftp_download_dir", { sessionId, remotePath, localDir });
+    return invoke("sftp_download_dir", { sessionId, remotePath, localDir, overwrite });
   },
 
   deleteRemotePath(sessionId: string, path: string, isDir: boolean): Promise<void> {

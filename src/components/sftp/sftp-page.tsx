@@ -19,7 +19,6 @@ import {
   ArrowDown,
   ArrowUpDown,
   FolderPlus,
-  ChevronDown,
   ArrowRight,
   HardDrive,
   Trash2,
@@ -41,6 +40,8 @@ import {
 } from "@/lib/tauri-api";
 import type { ConnectionProfile } from "@/types/connection";
 import { WanderingEyes } from "@/components/ui/wandering-eyes";
+import { Dropdown } from "@/components/ui/dropdown";
+import type { DropdownItem } from "@/components/ui/dropdown";
 
 const NAME_WIDTHS = ["55%", "70%", "45%", "60%"];
 
@@ -715,9 +716,7 @@ export function SftpPage() {
   const [connectionStep, setConnectionStep] = useState(0);
 
   const [showHiddenFiles, setShowHiddenFiles] = useState(false);
-  const [connectionDropdownOpen, setConnectionDropdownOpen] = useState(false);
   const [drives, setDrives] = useState<DriveInfo[]>([]);
-  const [showDriveSelector, setShowDriveSelector] = useState(false);
 
   const [localPath, setLocalPath] = useState<string>("");
   const [localRoot, setLocalRoot] = useState<string>("");
@@ -1127,6 +1126,7 @@ export function SftpPage() {
     localFilePath: string,
     isDir = false,
     fileSize = 0,
+    overwrite = false,
   ) => {
     if (!sessionId || !connected) {
       toast.warning("Connect to a server first");
@@ -1138,6 +1138,25 @@ export function SftpPage() {
       remotePath === "." || remotePath === "/"
         ? fileName
         : `${remotePath.replace(/\/$/, "")}/${fileName}`;
+
+    if (!overwrite) {
+      try {
+        await sftpApi.statRemote(sessionId, remoteTarget);
+        setConfirmDialog({
+          title: "Overwrite file?",
+          description: `"${fileName}" already exists on the remote server. Do you want to overwrite it?`,
+          confirmLabel: "Overwrite",
+          danger: true,
+          onConfirm: () => {
+            uploadLocalFile(localFilePath, isDir, fileSize, true);
+          },
+        });
+        return;
+      } catch {
+        // Remote file doesn't exist — proceed with upload
+      }
+    }
+
     const now = performance.now();
     setUpload({
       ...createTransferState(),
@@ -1153,6 +1172,7 @@ export function SftpPage() {
           sessionId,
           localFilePath,
           remotePath,
+          overwrite,
         );
         toast.success("Folder uploaded", {
           description: `${result.itemsTransferred} files (${formatBytes(result.totalBytes)})`,
@@ -1162,7 +1182,7 @@ export function SftpPage() {
           sessionId,
           localFilePath,
           remotePath,
-          false,
+          overwrite,
         );
         toast.success("Uploaded", { description: result.remotePath });
       }
@@ -1173,17 +1193,20 @@ export function SftpPage() {
         try {
           await sftpApi.deleteRemotePath(sessionId, remoteTarget, isDir);
         } catch {
-          /* cleanup best effort */
+          toast.warning("Upload canceled but partial file may still exist on remote server. You can delete it manually.");
         }
         toast.message("Upload canceled");
         await loadRemoteDir(remotePath);
       } else {
+        let cleanedUp = true;
         try {
           await sftpApi.deleteRemotePath(sessionId, remoteTarget, isDir);
         } catch {
-          /* cleanup best effort */
+          cleanedUp = false;
         }
-        toast.error("Upload failed", { description: message });
+        toast.error("Upload failed", {
+          description: cleanedUp ? message : `${message} — Partial file could not be cleaned up.`,
+        });
       }
     } finally {
       setUpload((prev) => ({
@@ -1195,7 +1218,7 @@ export function SftpPage() {
     }
   };
 
-  const downloadRemoteFile = async (remoteFilePath: string, isDir = false) => {
+  const downloadRemoteFile = async (remoteFilePath: string, isDir = false, overwrite = false) => {
     if (!sessionId || !connected || download.active) {
       toast.warning("Not connected to server");
       return;
@@ -1206,6 +1229,7 @@ export function SftpPage() {
       localPath.endsWith("\\") || localPath.endsWith("/")
         ? `${localPath}${fileName}`
         : `${localPath}\\${fileName}`;
+
     const now = performance.now();
     setDownload({
       ...createTransferState(),
@@ -1221,6 +1245,7 @@ export function SftpPage() {
           sessionId,
           remoteFilePath,
           localPath,
+          overwrite,
         );
         toast.success("Folder downloaded", {
           description: `${result.itemsTransferred} files (${formatBytes(result.totalBytes)})`,
@@ -1230,6 +1255,7 @@ export function SftpPage() {
           sessionId,
           remoteFilePath,
           localPath,
+          overwrite,
         );
         toast.success("Downloaded", { description: result.localPath });
       }
@@ -1240,17 +1266,31 @@ export function SftpPage() {
         try {
           await sftpApi.deleteLocalPath(localTarget, isDir);
         } catch {
-          /* cleanup best effort */
+          toast.warning("Download canceled but partial file may still exist locally. You can delete it manually.");
         }
         toast.message("Download canceled");
         await loadLocalDir(localPath);
+      } else if (!overwrite && message.includes("Local file already exists")) {
+        setDownload((prev) => ({ ...prev, active: false, progress: null }));
+        setConfirmDialog({
+          title: "Overwrite file?",
+          description: `"${fileName}" already exists locally. Do you want to overwrite it?`,
+          confirmLabel: "Overwrite",
+          danger: true,
+          onConfirm: () => {
+            downloadRemoteFile(remoteFilePath, isDir, true);
+          },
+        });
       } else {
+        let cleanedUp = true;
         try {
           await sftpApi.deleteLocalPath(localTarget, isDir);
         } catch {
-          /* cleanup best effort */
+          cleanedUp = false;
         }
-        toast.error("Download failed", { description: message });
+        toast.error("Download failed", {
+          description: cleanedUp ? message : `${message} — Partial file could not be cleaned up.`,
+        });
       }
     } finally {
       setDownload((prev) => ({
@@ -1454,7 +1494,6 @@ export function SftpPage() {
   };
 
   const selectDrive = useCallback((mountPoint: string) => {
-    setShowDriveSelector(false);
     if (!localRoot) {
       void loadLocalDir();
       return;
@@ -1494,7 +1533,7 @@ export function SftpPage() {
 
     // Auto-focus first menu item
     requestAnimationFrame(() => {
-      const first = document.querySelector<HTMLButtonElement>('[role="menuitem"]:not(.sftp-context-menu-item--disabled)');
+      const first = document.querySelector<HTMLButtonElement>('[role="menuitem"]:not(.context-menu-item--disabled)');
       first?.focus();
     });
 
@@ -1529,54 +1568,20 @@ export function SftpPage() {
         <div className="sftp-connect-row">
           {!connected && !connecting && (
             <>
-              <div className="dropdown-wrapper">
-                <button
-                  className="dropdown-trigger sftp-connection-select"
-                  onClick={() =>
-                    setConnectionDropdownOpen(!connectionDropdownOpen)
-                  }
-                >
-                  <Link2 size={12} />
-                  <span className="sftp-connection-label">
-                    {selectedConnection
-                      ? `${selectedConnection.name} (${selectedConnection.username}@${selectedConnection.host}:${selectedConnection.port})`
-                      : "Select connection..."}
-                  </span>
-                  <ChevronDown size={11} />
-                </button>
-                {connectionDropdownOpen && (
-                  <>
-                    <div
-                      className="dropdown-backdrop"
-                      onClick={() => setConnectionDropdownOpen(false)}
-                    />
-                    <div className="dropdown-menu sftp-connection-dropdown">
-                      {connections.length === 0 ? (
-                        <div className="sftp-drive-empty">
-                          No saved connections
-                        </div>
-                      ) : (
-                        connections.map((conn) => (
-                          <button
-                            key={conn.id}
-                            className={`dropdown-item ${selectedConnectionId === conn.id ? "active" : ""}`}
-                            onClick={() => {
-                              setSelectedConnectionId(conn.id);
-                              setConnectionDropdownOpen(false);
-                            }}
-                          >
-                            <span className="sftp-conn-dot" />
-                            <span className="sftp-conn-label">{conn.name}</span>
-                            <span className="dropdown-hint">
-                              {conn.username}@{conn.host}:{conn.port}
-                            </span>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
+              <Dropdown
+                value={selectedConnectionId}
+                items={connections.map((conn) => ({
+                  value: conn.id,
+                  label: conn.name,
+                  hint: `${conn.username}@${conn.host}:${conn.port}`,
+                  icon: <span className="sftp-conn-dot" />,
+                }))}
+                onChange={(v) => v && setSelectedConnectionId(String(v))}
+                placeholder="Select connection..."
+                triggerIcon={<Link2 size={12} />}
+                triggerClassName="sftp-connection-select"
+                emptyText="No saved connections"
+              />
               <button
                 className="btn-primary"
                 onClick={connect}
@@ -1618,43 +1623,20 @@ className="btn-danger"
           >
             {showHiddenFiles ? <Eye size={12} /> : <EyeOff size={12} />}
           </button>
-          <div className="dropdown-wrapper">
-            <button
-              className="dropdown-trigger"
-              onClick={() => setShowDriveSelector(!showDriveSelector)}
-              title="Select local drive"
-              aria-label="Select local drive"
-            >
-              <HardDrive size={12} />
-              {getDriveLetter(localPath) && (
-                <span className="sftp-drive-name">{getDriveLetter(localPath)}:</span>
-              )}
-              <span className={`sftp-drive-chevron ${showDriveSelector ? "open" : ""}`}>
-                <ChevronDown size={11} />
-              </span>
-            </button>
-            {showDriveSelector && (
-              <>
-                <div className="dropdown-backdrop" onClick={() => setShowDriveSelector(false)} />
-                <div className="dropdown-menu sftp-drive-dropdown">
-                  {drives.length === 0 ? (
-                    <div className="sftp-drive-empty">No drives found</div>
-                  ) : (
-                    drives.map((d) => (
-                      <button
-                        key={d.mountPoint}
-                        className={`dropdown-item ${getDriveLetter(localPath) === getDriveLetter(d.mountPoint) ? "active" : ""}`}
-                        onClick={() => selectDrive(d.mountPoint)}
-                      >
-                        <span className="sftp-drive-icon"><HardDrive size={12} /></span>
-                        <span className="sftp-drive-name">{d.mountPoint}</span>
-                      </button>
-                    ))
-                  )}
-                </div>
-              </>
-            )}
-          </div>
+          <Dropdown
+            value={
+              drives.find((d) => getDriveLetter(localPath) === getDriveLetter(d.mountPoint))?.mountPoint ?? null
+            }
+            items={drives.map((d) => ({
+              value: d.mountPoint,
+              label: d.mountPoint,
+              icon: <span className="sftp-drive-icon"><HardDrive size={12} /></span>,
+            }))}
+            onChange={(v) => v && selectDrive(String(v))}
+            placeholder="Drive"
+            triggerIcon={<HardDrive size={12} />}
+            emptyText="No drives found"
+          />
           <div className="sftp-breadcrumb-trail">
             {localBreadcrumbSegments.map((seg, idx) => (
               <span key={`local-${idx}`}>
@@ -2138,14 +2120,14 @@ className="btn-danger"
       {/* Context Menu */}
       {contextMenu && (
         <div
-          className="sftp-context-menu"
+          className="context-menu"
           style={{ top: contextMenu.y, left: contextMenu.x }}
           role="menu"
           aria-label="File actions"
           onMouseDown={(event) => event.stopPropagation()}
           onContextMenu={(event) => event.preventDefault()}
           onKeyDown={(e) => {
-            const items = (e.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(.sftp-context-menu-item--disabled)');
+            const items = (e.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(.context-menu-item--disabled)');
             const currentIndex = Array.from(items).indexOf(document.activeElement as HTMLButtonElement);
             if (e.key === "ArrowDown") {
               e.preventDefault();
@@ -2161,7 +2143,7 @@ className="btn-danger"
           {contextMenu.entry && (
             <button
               type="button"
-              className="sftp-context-menu-item"
+              className="context-menu-item"
               role="menuitem"
               onClick={() => {
                 closeContextMenu();
@@ -2174,7 +2156,7 @@ className="btn-danger"
           {contextMenu.entry && (
             <button
               type="button"
-              className={`sftp-context-menu-item sftp-context-menu-item--danger ${deleteOp.active ? "sftp-context-menu-item--disabled" : ""}`}
+              className={`context-menu-item context-menu-item--danger ${deleteOp.active ? "context-menu-item--disabled" : ""}`}
               role="menuitem"
               disabled={deleteOp.active}
               onClick={() => {
@@ -2186,11 +2168,11 @@ className="btn-danger"
               <Trash2 size={14} /> Delete{deleteOp.active ? " (in progress)" : ""}
             </button>
           )}
-          <div className="sftp-context-menu-sep" />
+          <div className="context-menu-sep" />
           {contextMenu.entry && contextMenu.pane === "remote" && (
             <button
               type="button"
-              className="sftp-context-menu-item"
+              className="context-menu-item"
               role="menuitem"
               onClick={() => {
                 closeContextMenu();
@@ -2202,7 +2184,7 @@ className="btn-danger"
           )}
           <button
             type="button"
-            className="sftp-context-menu-item"
+            className="context-menu-item"
             role="menuitem"
             onClick={() => {
               closeContextMenu();
@@ -2212,10 +2194,10 @@ className="btn-danger"
           >
             <ArrowRight size={14} /> Refresh
           </button>
-          <div className="sftp-context-menu-sep" />
+          <div className="context-menu-sep" />
           <button
             type="button"
-            className="sftp-context-menu-item"
+            className="context-menu-item"
             role="menuitem"
             onClick={() => {
               closeContextMenu();

@@ -24,6 +24,7 @@
     --font-mono: "JetBrains Mono", ui-monospace, monospace;
     --font-weight-ui-control: 500;
     --titlebar-safe-area: 40px;
+    --bottom-safe-area: 28px;
 }
 html.light {
     --bg: #f9fafb;
@@ -519,6 +520,17 @@ input::placeholder {
     display: flex;
     gap: 4px;
 }
+.keycard-skeleton {
+    background: var(--bg-elevated);
+    border-radius: 16px;
+    padding: 20px;
+    border: 1px solid var(--border-color);
+}
+.keycard-skeleton-header {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
 
 /* Modal */
 .modal-backdrop {
@@ -532,7 +544,7 @@ input::placeholder {
 .modal {
     position: fixed;
     top: calc(
-        var(--titlebar-safe-area) + (100vh - var(--titlebar-safe-area)) / 2
+        var(--titlebar-safe-area) + (100vh - var(--titlebar-safe-area) - var(--bottom-safe-area)) / 2
     );
     left: 50%;
     transform: translate(-50%, -50%);
@@ -541,13 +553,13 @@ input::placeholder {
     border-radius: var(--radius-lg);
     width: 90%;
     max-width: 480px;
-    max-height: calc(100vh - var(--titlebar-safe-area) - 24px);
+    max-height: calc(100vh - var(--titlebar-safe-area) - var(--bottom-safe-area) - 24px);
     overflow: hidden;
     z-index: 51;
 }
 .modal-dialog {
     padding: 28px;
-    max-height: calc(100vh - var(--titlebar-safe-area) - 24px);
+    max-height: calc(100vh - var(--titlebar-safe-area) - var(--bottom-safe-area) - 24px);
     overflow-y: auto;
 }
 .modal-header {
@@ -1111,30 +1123,6 @@ input::placeholder {
     border-top: 1px solid var(--border);
 }
 
-/* Settings Select */
-.settings-select {
-    padding: 8px 12px;
-    background: var(--bg-surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    font-size: 13px;
-    color: var(--text);
-    cursor: pointer;
-    transition: all 0.15s;
-    min-width: 160px;
-    flex-shrink: 0;
-}
-.settings-select:hover {
-    border-color: var(--text-muted);
-}
-.settings-select:focus {
-    border-color: var(--accent);
-}
-.settings-select option {
-    background: var(--bg-elevated);
-    color: var(--text);
-}
-
 /* Font Size Stepper */
 .font-size-stepper {
     display: inline-flex;
@@ -1239,17 +1227,20 @@ input::placeholder {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 14px;
+    padding: 8px 12px;
     background: var(--bg-surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    color: var(--text);
-    font-size: 14px;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: var(--font-weight-ui-control);
     cursor: pointer;
-    transition: border-color 0.15s;
+    transition: all 0.15s ease;
 }
 .font-picker-trigger:hover {
+    color: var(--text);
     border-color: var(--text-muted);
+    background: var(--bg-hover);
 }
 .font-picker-value {
     overflow: hidden;
@@ -1265,17 +1256,18 @@ input::placeholder {
     top: var(--titlebar-safe-area);
     left: 0;
     right: 0;
-    bottom: 0;
+    bottom: var(--bottom-safe-area);
     z-index: 40;
 }
 .font-picker-dropdown {
     position: absolute;
-    top: calc(100% + 4px);
+    top: calc(100% + 6px);
     left: 0;
     right: 0;
     background: var(--bg-elevated);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
     z-index: 50;
     display: flex;
     flex-direction: column;
@@ -1753,6 +1745,7 @@ input::placeholder {
     position: fixed;
     inset: 0;
     top: var(--titlebar-safe-area);
+    bottom: var(--bottom-safe-area);
     background: rgba(0, 0, 0, 0.4);
     backdrop-filter: blur(4px);
     z-index: 50;
@@ -1762,7 +1755,7 @@ input::placeholder {
     position: fixed;
     top: var(--titlebar-safe-area);
     right: 0;
-    bottom: 0;
+    bottom: var(--bottom-safe-area);
     width: 380px;
     max-width: 90vw;
     background: var(--bg-elevated);
@@ -2400,7 +2393,7 @@ input::placeholder {
  * Sizing contract:
  *   .dropdown-menu min-width: 100% — always at least as wide as the trigger.
  *   Variants may override (.dropdown-menu--compact → 140px,
- *   .sftp-connection-dropdown → 320px).
+ *   Non-compact menus match trigger width via inline minWidth).
  *
  * Spacing:
  *   flex-column + gap: 4px between items. Menu padding: 4px.
@@ -2409,6 +2402,10 @@ input::placeholder {
  * Modifiers:
  *   --right    — right: 0 / left: auto
  *   --compact  — min-width: 140px
+ *
+ * NOTE: .dropdown-trigger is also used on toggle/display elements
+ * (Hidden Files toggle, Connected indicator) that look like dropdowns
+ * but don't open menus. This is intentional for visual consistency.
  * ─────────────────────────────────────────────────────────
  */
 
@@ -2440,7 +2437,7 @@ input::placeholder {
     top: var(--titlebar-safe-area);
     left: 0;
     right: 0;
-    bottom: 0;
+    bottom: var(--bottom-safe-area);
     z-index: 40;
 }
 .dropdown-menu {
@@ -2459,10 +2456,6 @@ input::placeholder {
     border-radius: var(--radius-md);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
     padding: 4px;
-}
-.dropdown-menu--right {
-    right: 0;
-    left: auto;
 }
 .dropdown-menu--compact {
     min-width: 140px;
@@ -2496,6 +2489,37 @@ input::placeholder {
     color: var(--text-muted);
     font-family: var(--font-mono);
 }
+.dropdown-item .dropdown-hint {
+    margin-left: auto;
+}
+.dropdown-chevron {
+    transition: transform 0.16s ease;
+}
+.dropdown-chevron.open {
+    transform: rotate(180deg);
+}
+.dropdown-trigger--full {
+    width: 100%;
+    justify-content: space-between;
+}
+.dropdown-wrapper--full {
+    width: 100%;
+}
+.dropdown-item.focused {
+    background: var(--bg-hover);
+}
+.dropdown-empty {
+    padding: 10px 12px;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+.dropdown-trigger-label {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: left;
+}
 
 .sftp-connection-select {
     min-width: 280px;
@@ -2507,7 +2531,7 @@ input::placeholder {
     font-size: 14px;
     gap: 10px;
 }
-.sftp-connection-select > .sftp-connection-label {
+.sftp-connection-select > .dropdown-trigger-label {
     flex: 1;
     white-space: nowrap;
     overflow: hidden;
@@ -2519,17 +2543,6 @@ input::placeholder {
     background: var(--bg-surface);
     color: var(--text);
     cursor: default;
-}
-.sftp-connection-dropdown {
-    min-width: 320px;
-    max-width: 460px;
-    right: 0;
-    left: auto;
-}
-.sftp-drive-empty {
-    padding: 10px 12px;
-    color: var(--text-muted);
-    font-size: 12px;
 }
 .sftp-conn-dot {
     display: inline-flex;
@@ -2544,29 +2557,6 @@ input::placeholder {
 .sftp-conn-dot--active {
     background: var(--success);
     box-shadow: 0 0 10px color-mix(in srgb, var(--success) 40%, transparent);
-}
-.sftp-conn-label {
-    font-size: 13px;
-}
-.sftp-connection-dropdown .dropdown-item {
-    display: grid;
-    grid-template-columns: 8px 1fr;
-    grid-template-rows: auto auto;
-    align-items: center;
-    column-gap: 8px;
-    row-gap: 2px;
-}
-.sftp-connection-dropdown .sftp-conn-dot {
-    grid-row: 1 / span 2;
-}
-.sftp-connection-dropdown .sftp-conn-label {
-    grid-column: 2;
-    grid-row: 1;
-}
-.sftp-connection-dropdown .dropdown-hint {
-    grid-column: 2;
-    grid-row: 2;
-    margin-left: 0;
 }
 
 .sftp-breadcrumb-bar {
@@ -2600,7 +2590,7 @@ input::placeholder {
     max-width: none;
     justify-content: space-between;
 }
-.sftp-breadcrumb--local .dropdown-wrapper > .dropdown-trigger > span {
+.sftp-breadcrumb--local .dropdown-wrapper > .dropdown-trigger > .dropdown-trigger-label {
     min-width: 0;
     white-space: nowrap;
     overflow: hidden;
@@ -2632,23 +2622,8 @@ input::placeholder {
     font-weight: 600;
     cursor: default;
 }
-.sftp-drive-chevron {
-    transition: transform 0.16s ease;
-}
-.sftp-drive-chevron.open {
-    transform: rotate(180deg);
-}
-.sftp-page--minimal .sftp-drive-dropdown {
-    left: 0;
-    right: auto;
-}
 .sftp-drive-icon {
     color: var(--text-muted);
-}
-.sftp-drive-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .sftp-grid--minimal {
@@ -2879,7 +2854,10 @@ input::placeholder {
     background: color-mix(in srgb, var(--warning) 12%, transparent);
 }
 
-.sftp-context-menu {
+/* Context Menu — shared between SFTP and terminal; .sftp-context-menu and .app-context-menu are aliases */
+.context-menu,
+.sftp-context-menu,
+.app-context-menu {
     position: fixed;
     z-index: 120;
     min-width: 190px;
@@ -2887,33 +2865,43 @@ input::placeholder {
     border-radius: var(--radius-md);
     border: 1px solid var(--border);
     background: var(--bg-elevated);
-    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
 }
-.sftp-context-menu-item {
+.context-menu-item,
+.sftp-context-menu-item,
+.app-context-menu-item {
     width: 100%;
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 8px 10px;
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
     color: var(--text-secondary);
     text-align: left;
+    font-size: 12px;
 }
-.sftp-context-menu-item:hover {
+.context-menu-item:hover,
+.sftp-context-menu-item:hover,
+.app-context-menu-item:hover {
     background: var(--bg-hover);
     color: var(--text);
 }
+.context-menu-item--danger,
 .sftp-context-menu-item--danger {
     color: var(--danger);
 }
+.context-menu-item--danger:hover,
 .sftp-context-menu-item--danger:hover {
     background: color-mix(in srgb, var(--danger) 12%, transparent);
     color: var(--danger);
 }
-.sftp-context-menu-item--disabled {
+.context-menu-item--disabled,
+.sftp-context-menu-item--disabled,
+.app-context-menu-item--disabled {
     opacity: 0.45;
     pointer-events: none;
 }
+.context-menu-sep,
 .sftp-context-menu-sep {
     height: 1px;
     margin: 4px 6px;

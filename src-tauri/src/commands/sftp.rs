@@ -115,7 +115,7 @@ async fn copy_sync_to_async<R: std::io::Read, W: tokio::io::AsyncWrite + Unpin>(
         if n == 0 {
             return Ok(());
         }
-        writer.write_all(&buf[..n]).await.map_err(|e| AppError::SshConnection(e.to_string()))?;
+        writer.write_all(&buf[..n]).await.map_err(|e| AppError::user_friendly("Failed to write to remote file.", e))?;
         *total_bytes += n as u64;
         if tracker.should_emit() || *total_bytes >= total_size {
             tracker.emit(app, event, file_name, *total_bytes, total_size);
@@ -140,7 +140,7 @@ async fn copy_async_to_sync<R: tokio::io::AsyncRead + Unpin, W: std::io::Write>(
         if cancel_flag.load(Ordering::SeqCst) {
             return Err(AppError::InvalidInput("Transfer canceled by user".to_string()));
         }
-        let n = reader.read(buf).await.map_err(|e| AppError::SshConnection(e.to_string()))?;
+        let n = reader.read(buf).await.map_err(|e| AppError::user_friendly("Failed to read from remote file.", e))?;
         if n == 0 {
             return Ok(());
         }
@@ -392,7 +392,9 @@ async fn collect_all_remote_entries(
 
         let entries = {
             let guard = conn.lock().await;
-            guard.session.read_dir(&current).await.map_err(|e| AppError::SshConnection(e.to_string()))?
+            guard.session.read_dir(&current).await.map_err(|e| {
+                AppError::user_friendly("Failed to read remote directory.", e)
+            })?
         };
 
         for entry in entries {
@@ -524,7 +526,7 @@ pub async fn sftp_connect(
     });
     let mut ssh = client::connect(config, (creds.host.as_str(), creds.port), handler)
         .await
-        .map_err(|e| AppError::SshConnection(e.to_string()))?;
+        .map_err(|e| AppError::user_friendly("Could not reach the server. Verify the host and port.", e))?;
 
     if let Some(ref key_content) = creds.key_data {
         let key_pair = decode_secret_key(key_content.trim(), None)
@@ -533,20 +535,20 @@ pub async fn sftp_connect(
         let auth = ssh
             .authenticate_publickey(&creds.username, key_with_hash)
             .await
-            .map_err(|e| AppError::SshAuth(e.to_string()))?;
+            .map_err(|e| AppError::user_friendly("Authentication with the server failed. Check your credentials.", e))?;
         if !auth.success() {
-            return Err(AppError::SshAuth("Authentication failed".to_string()));
+            return Err(AppError::SshAuth("Authentication failed. Verify your username and credentials.".to_string()));
         }
     } else if let Some(ref password) = creds.password {
         let auth = ssh
             .authenticate_password(&creds.username, password)
             .await
-            .map_err(|e| AppError::SshAuth(e.to_string()))?;
+            .map_err(|e| AppError::user_friendly("Authentication with the server failed. Check your password.", e))?;
         if !auth.success() {
-            return Err(AppError::SshAuth("Authentication failed".to_string()));
+            return Err(AppError::SshAuth("Authentication failed. Verify your username and password.".to_string()));
         }
     } else {
-        return Err(AppError::SshAuth("No authentication method available".to_string()));
+        return Err(AppError::SshAuth("No authentication method available. Configure a password or SSH key.".to_string()));
     }
 
     if let Some(ref mut p) = creds.password {
@@ -569,6 +571,9 @@ pub async fn sftp_connect(
         .await
         .map_err(|e| AppError::SshConnection(e.to_string()))?;
 
+    if state.sftp_sessions.remove(&session_id).is_some() {
+        log::info!("Replaced existing SFTP session: {}", session_id);
+    }
     state.sftp_sessions.insert(session_id.clone(), Arc::new(tokio::sync::Mutex::new(SftpConnection {
         handle: ssh,
         session: sftp,
@@ -714,7 +719,7 @@ pub async fn sftp_upload_file(
 
     let mut remote_file = conn.session.create(&remote_path)
         .await
-        .map_err(|e| AppError::SshConnection(e.to_string()))?;
+        .map_err(|e| AppError::user_friendly("Failed to create remote file for upload.", e))?;
 
     let file = fs::File::open(&local).map_err(|e| AppError::Io(e))?;
     let mut reader = BufReader::with_capacity(CHUNK_SIZE, file);
@@ -778,6 +783,7 @@ pub async fn sftp_download_file(
     session_id: String,
     remote_path: String,
     local_dir: String,
+    overwrite: Option<bool>,
     state: State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> AppResult<DownloadResult> {
@@ -793,6 +799,10 @@ pub async fn sftp_download_file(
     let file_name = file_basename(&remote_path);
     let local_file_path = local_dir_path.join(&file_name);
 
+    if !overwrite.unwrap_or(false) && local_file_path.exists() {
+        return Err(AppError::user_friendly("Local file already exists. Enable overwrite to replace it.", ""));
+    }
+
     let conn = get_session_arc(&state, &session_id)?;
     let conn = conn.lock().await;
     let cancel_flag = init_cancel_flag_in_map(&state.sftp_download_cancellation, &session_id);
@@ -805,9 +815,9 @@ pub async fn sftp_download_file(
 
     let mut remote_file = conn.session.open(&remote_path)
         .await
-        .map_err(|e| AppError::SshConnection(e.to_string()))?;
+        .map_err(|e| AppError::user_friendly("Failed to open remote file for download.", e))?;
 
-    let mut local_file = fs::File::create(&local_file_path).map_err(|e| AppError::Io(e))?;
+    let mut local_file = fs::File::create(&local_file_path).map_err(|e| AppError::user_friendly("Failed to create local file for download.", e))?;
     let mut chunk_buf = vec![0u8; CHUNK_SIZE];
     let mut bytes_downloaded: u64 = 0;
     let mut tracker = ProgressTracker::new();
@@ -1000,6 +1010,7 @@ pub async fn sftp_upload_dir(
     session_id: String,
     local_path: String,
     remote_dir: String,
+    overwrite: Option<bool>,
     state: State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> AppResult<TransferDirResult> {
@@ -1072,9 +1083,15 @@ pub async fn sftp_upload_dir(
 
         let file_name = local_file.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
 
+        if !overwrite.unwrap_or(true) {
+            if conn.session.try_exists(remote_path).await.unwrap_or(false) {
+                continue;
+            }
+        }
+
         let mut remote_file = conn.session.create(remote_path)
             .await
-            .map_err(|e| AppError::SshConnection(e.to_string()))?;
+            .map_err(|e| AppError::user_friendly("Failed to create remote file for upload.", e))?;
 
         let file = fs::File::open(local_file).map_err(|e| AppError::Io(e))?;
         let mut reader = BufReader::with_capacity(CHUNK_SIZE, file);
@@ -1113,6 +1130,7 @@ pub async fn sftp_download_dir(
     session_id: String,
     remote_path: String,
     local_dir: String,
+    overwrite: Option<bool>,
     state: State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> AppResult<TransferDirResult> {
@@ -1176,6 +1194,11 @@ pub async fn sftp_download_dir(
         }
 
         let name = remote_entry_path.split('/').last().unwrap_or("file").to_string();
+
+        if !overwrite.unwrap_or(true) && local_entry_path.exists() {
+            continue;
+        }
+
         let mut remote_file = conn.session.open(remote_entry_path).await.map_err(|e| AppError::SshConnection(e.to_string()))?;
 
         let mut local_file = fs::File::create(local_entry_path).map_err(|e| AppError::Io(e))?;
@@ -1218,7 +1241,7 @@ pub async fn sftp_mkdir_remote(
     let conn = conn.lock().await;
     conn.session.create_dir(path)
         .await
-        .map_err(|e| AppError::SshConnection(e.to_string()))?;
+        .map_err(|e| AppError::user_friendly("Failed to create remote directory. Check permissions.", e))?;
     Ok(())
 }
 
@@ -1426,7 +1449,7 @@ pub async fn sftp_stat_remote(
     let conn = get_session_arc(&state, &session_id)?;
     let conn = conn.lock().await;
     let meta = conn.session.metadata(&path).await
-        .map_err(|e| AppError::SshConnection(e.to_string()))?;
+        .map_err(|e| AppError::user_friendly("Failed to get file properties.", e))?;
     let name = file_basename(&path);
     Ok(RemoteFileStat {
         name,
@@ -1455,5 +1478,5 @@ pub async fn sftp_get_remote_home(session_id: String, state: State<'_, AppState>
     validate_identifier(&session_id, "session ID", MAX_SESSION_ID_LEN)?;
     let guard = get_session_arc(&state, &session_id)?;
     let guard = guard.lock().await;
-    guard.session.canonicalize(".").await.map_err(|e| AppError::SshConnection(e.to_string()))
+    guard.session.canonicalize(".").await.map_err(|e| AppError::user_friendly("Failed to detect remote home directory.", e))
 }

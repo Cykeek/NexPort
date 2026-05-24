@@ -21,6 +21,16 @@ pub enum AppError {
     Vault(String),
 }
 
+impl AppError {
+    /// Log the technical error and return a user-friendly message.
+    /// Use this for error paths where the raw library error would confuse users.
+    pub fn user_friendly(user_msg: impl Into<String>, tech: impl std::fmt::Display) -> Self {
+        let msg = user_msg.into();
+        log::error!("{} (technical: {})", &msg, tech);
+        AppError::InvalidInput(msg)
+    }
+}
+
 impl serde::Serialize for AppError {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

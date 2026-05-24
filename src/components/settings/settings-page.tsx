@@ -5,8 +5,10 @@ import { check, Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-shell";
-import { Download, RefreshCw, Check, ChevronDown, ExternalLink, Zap, Info, Bell, Palette } from "lucide-react";
+import { Download, RefreshCw, ExternalLink, Zap, Info, Palette } from "lucide-react";
 import { AppearanceSection } from "./appearance-section";
+import { Dropdown } from "@/components/ui/dropdown";
+import type { DropdownItem } from "@/components/ui/dropdown";
 
 type UpdateChannel = "stable" | "dev";
 type SettingsTab = "general" | "appearance";
@@ -39,7 +41,6 @@ export function SettingsPage() {
   const [checking, setChecking] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [update, setUpdate] = useState<Update | null>(null);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<"checking" | "available" | "up-to-date" | "no-packages">("checking");
 
   useEffect(() => {
@@ -48,7 +49,6 @@ export function SettingsPage() {
 
   const handleChannelChange = (newChannel: UpdateChannel) => {
     setChannel(newChannel);
-    setDropdownOpen(false);
     localStorage.setItem("update-channel", newChannel);
     setUpdateInfo(null);
     setUpdate(null);
@@ -202,30 +202,17 @@ export function SettingsPage() {
                           <span className="settings-row-label">Update Channel</span>
                         </div>
                       </div>
-                      <div className="dropdown-wrapper">
-                        <button className="dropdown-trigger" onClick={() => setDropdownOpen(!dropdownOpen)}>
-                          <span className={"settings-channel-dot " + (channel === "stable" ? "settings-channel-dot--stable" : "settings-channel-dot--dev")} />
-                          {channel === "stable" ? "Stable" : "Dev"}
-                          <ChevronDown size={11} />
-                        </button>
-                        {dropdownOpen && (
-                          <>
-                            <div className="dropdown-backdrop" onClick={() => setDropdownOpen(false)} />
-                            <div className="dropdown-menu dropdown-menu--compact dropdown-menu--right">
-                              <button className={`dropdown-item ${channel === "stable" ? "active" : ""}`} onClick={() => handleChannelChange("stable")}>
-                                <span className="settings-channel-dot settings-channel-dot--stable" />
-                                Stable
-                                <span className="dropdown-hint">main</span>
-                              </button>
-                              <button className={`dropdown-item ${channel === "dev" ? "active" : ""}`} onClick={() => handleChannelChange("dev")}>
-                                <span className="settings-channel-dot settings-channel-dot--dev" />
-                                Dev
-                                <span className="dropdown-hint">dev</span>
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </div>
+                      <Dropdown
+                        value={channel}
+                        items={[
+                          { value: "stable", label: "Stable", hint: "main", icon: <span className="settings-channel-dot settings-channel-dot--stable" /> },
+                          { value: "dev", label: "Dev", hint: "dev", icon: <span className="settings-channel-dot settings-channel-dot--dev" /> },
+                        ] as DropdownItem[]}
+                        onChange={(v) => v && handleChannelChange(v as UpdateChannel)}
+                        compact
+                        align="right"
+                        triggerIcon={<span className={"settings-channel-dot " + (channel === "stable" ? "settings-channel-dot--stable" : "settings-channel-dot--dev")} />}
+                      />
                     </div>
                     <div className="settings-row">
                       <div className="settings-row-left">
