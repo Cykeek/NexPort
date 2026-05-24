@@ -811,6 +811,37 @@ input::placeholder {
     opacity: 0.85;
 }
 
+/* Speed tier colors */
+.statusbar-meter--light { color: var(--text-secondary); }
+.statusbar-meter--active { color: var(--accent, #5b9bd5); }
+.statusbar-meter--heavy { color: #e8a838; }
+
+/* Arrow pulse when traffic is flowing */
+@keyframes statusbar-pulse {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 1; }
+}
+.statusbar-meter-icon-wrap {
+    display: inline-flex;
+    align-items: center;
+}
+.statusbar-meter-icon-wrap--active .statusbar-meter-icon {
+    animation: statusbar-pulse 1.2s ease-in-out infinite;
+}
+
+/* Sparkline */
+.statusbar-meter-counter {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+.statusbar-sparkline {
+    width: 30px;
+    height: 12px;
+    opacity: 0.5;
+    flex-shrink: 0;
+}
+
 /* Settings Page */
 .settings-page {
     padding: 24px 32px;
@@ -892,6 +923,13 @@ input::placeholder {
     color: var(--text);
     padding: 16px 20px;
     border-bottom: 1px solid var(--border);
+}
+
+/* Settings Sections Container */
+.settings-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
 }
 
 /* Settings Section */

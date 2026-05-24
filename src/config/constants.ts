@@ -94,4 +94,5 @@ export const DEFAULT_PREFERENCES = {
   uiThemingEnabled: false,
   colorMode: "dark" as ColorMode,
   showPublicIp: false,
+  showNetworkMeter: true,
 } as const;

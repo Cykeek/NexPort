@@ -26,6 +26,7 @@ interface AppearancePreferences {
   uiThemingEnabled: boolean;
   colorMode: ColorMode;
   showPublicIp: boolean;
+  showNetworkMeter: boolean;
 }
 
 interface ImportResult {
@@ -43,6 +44,7 @@ export interface AppearanceState extends AppearancePreferences {
   setUIThemingEnabled: (enabled: boolean) => void;
   setColorMode: (mode: ColorMode) => void;
   setShowPublicIp: (enabled: boolean) => void;
+  setShowNetworkMeter: (enabled: boolean) => void;
   reset: () => void;
   getPreferences: () => AppearancePreferences;
   importPreferences: (raw: unknown) => ImportResult;
@@ -116,6 +118,10 @@ function validatePreferences(raw: unknown): AppearancePreferences {
       typeof obj.showPublicIp === "boolean"
         ? obj.showPublicIp
         : DEFAULT_PREFERENCES.showPublicIp,
+    showNetworkMeter:
+      typeof obj.showNetworkMeter === "boolean"
+        ? obj.showNetworkMeter
+        : DEFAULT_PREFERENCES.showNetworkMeter,
   };
 }
 
@@ -248,6 +254,11 @@ export const useAppearanceStore = create<AppearanceState>((set, get) => ({
     persistToLocalStorage(get().getPreferences());
   },
 
+  setShowNetworkMeter: (enabled: boolean) => {
+    set({ showNetworkMeter: enabled });
+    persistToLocalStorage(get().getPreferences());
+  },
+
   reset: () => {
     set({ ...DEFAULT_PREFERENCES });
     try {
@@ -266,6 +277,7 @@ export const useAppearanceStore = create<AppearanceState>((set, get) => ({
       uiThemingEnabled,
       colorMode,
       showPublicIp,
+      showNetworkMeter,
     } = get();
     return {
       fontFamily,
@@ -275,6 +287,7 @@ export const useAppearanceStore = create<AppearanceState>((set, get) => ({
       uiThemingEnabled,
       colorMode,
       showPublicIp,
+      showNetworkMeter,
     };
   },
 
@@ -326,6 +339,12 @@ export const useAppearanceStore = create<AppearanceState>((set, get) => ({
         obj.showPublicIp !== validated.showPublicIp
       ) {
         resetFields.push("showPublicIp");
+      }
+      if (
+        obj.showNetworkMeter !== undefined &&
+        obj.showNetworkMeter !== validated.showNetworkMeter
+      ) {
+        resetFields.push("showNetworkMeter");
       }
     }
 

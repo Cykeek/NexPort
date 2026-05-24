@@ -10,9 +10,9 @@ export function NetworkIpToggle() {
     <div className="settings-row network-ip-toggle">
       <div className="settings-row-left">
         <div className="settings-row-text">
-          <span className="settings-row-label">Public IP in Status Bar</span>
+          <span className="settings-row-label">Public IP</span>
           <span className="settings-row-desc">
-            Show your public IP next to the network meter
+            Display your public IP address next to the network meters
           </span>
         </div>
       </div>

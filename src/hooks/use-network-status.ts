@@ -3,6 +3,17 @@
 import { useState, useEffect, useCallback } from "react";
 import { networkApi } from "@/lib/tauri-api";
 
+export type SpeedTier = "idle" | "light" | "active" | "heavy";
+
+export function getSpeedTier(bps: number): SpeedTier {
+  if (bps < 1024) return "idle";
+  if (bps < 100 * 1024) return "light";
+  if (bps < 5 * 1024 * 1024) return "active";
+  return "heavy";
+}
+
+const SPARKLINE_LENGTH = 30;
+
 interface NetworkStatus {
   online: boolean;
   ip: string | null;
@@ -11,6 +22,9 @@ interface NetworkStatus {
   meterAvailable: boolean;
   rxBps: number;
   txBps: number;
+  speedTier: SpeedTier;
+  rxHistory: number[];
+  txHistory: number[];
 }
 
 interface CounterSnapshot {
@@ -34,6 +48,9 @@ export function useNetworkStatus(showPublicIp = false) {
     meterAvailable: true,
     rxBps: 0,
     txBps: 0,
+    speedTier: "idle",
+    rxHistory: [],
+    txHistory: [],
   });
 
   const fetchIp = useCallback(async () => {
@@ -80,12 +97,16 @@ export function useNetworkStatus(showPublicIp = false) {
     let lastSnapshot: CounterSnapshot | null = null;
     let smoothedRxBps = 0;
     let smoothedTxBps = 0;
+    let rxHistory: number[] = [];
+    let txHistory: number[] = [];
 
     const resetMeter = () => {
       lastSnapshot = null;
       smoothedRxBps = 0;
       smoothedTxBps = 0;
-      setStatus((prev) => ({ ...prev, rxBps: 0, txBps: 0 }));
+      rxHistory = [];
+      txHistory = [];
+      setStatus((prev) => ({ ...prev, rxBps: 0, txBps: 0, speedTier: "idle", rxHistory: [], txHistory: [] }));
     };
 
     const updateFromCounters = async () => {
@@ -141,10 +162,15 @@ export function useNetworkStatus(showPublicIp = false) {
         smoothedRxBps = smoothBps(smoothedRxBps, rxRawBps);
         smoothedTxBps = smoothBps(smoothedTxBps, txRawBps);
 
+        rxHistory = [...rxHistory.slice(-(SPARKLINE_LENGTH - 1)), smoothedRxBps];
+        txHistory = [...txHistory.slice(-(SPARKLINE_LENGTH - 1)), smoothedTxBps];
+
+        const currentMax = Math.max(smoothedRxBps, smoothedTxBps);
         const download =
           counters.interfaceCount > 0 ? formatSpeed(smoothedRxBps) : "0 B/s";
         const upload =
           counters.interfaceCount > 0 ? formatSpeed(smoothedTxBps) : "0 B/s";
+        const speedTier = getSpeedTier(currentMax);
 
         setStatus((prev) =>
           prev.online
@@ -155,6 +181,9 @@ export function useNetworkStatus(showPublicIp = false) {
                 meterAvailable: true,
                 rxBps: smoothedRxBps,
                 txBps: smoothedTxBps,
+                speedTier,
+                rxHistory,
+                txHistory,
               }
             : prev,
         );
